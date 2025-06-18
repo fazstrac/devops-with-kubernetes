@@ -1,0 +1,20 @@
+# Start from the official Python build image to install dependencies
+# Not needed to use two-stage build for this example, but 
+# it's a good practice for production images
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+# Copy application code
+COPY . .
+
+# Final distroless image
+FROM gcr.io/distroless/python3-debian12
+
+WORKDIR /app
+
+# Copy installed dependencies and app code from builder
+COPY --from=builder /app /app
+
+# Set entrypoint (replace app.py with your main file)
+ENTRYPOINT ["python3", "app.py"]
