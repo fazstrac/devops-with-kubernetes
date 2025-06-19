@@ -1,0 +1,19 @@
+when:
+  - event: push
+    branch: main
+
+steps:
+  - name: containerize
+    image: woodpeckerci/plugin-kaniko
+    settings:
+      repo: git.fudwin.xyz:8443/sami/go-gin-tutorial
+      dockerfile: Containerfile
+      tag: ${CI_COMMIT_SHA}
+      dry-run: false
+      build_args:
+      - COMMIT_SHA=${CI_COMMIT_SHA}
+      - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
+  - name: check
+    image: alpine:latest
+    commands:
+      - ls
