@@ -11,7 +11,7 @@ steps:
       dockerfile: log_output/Containerfile
       context: log_output
       tag: ${CI_COMMIT_SHA}
-      dry-run: true
+      dry-run: false
       build_args:
       - COMMIT_SHA=${CI_COMMIT_SHA}
       - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
