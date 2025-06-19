@@ -11,7 +11,11 @@ steps:
       dockerfile: log_output/Containerfile
       context: log_output
       tag: ${CI_COMMIT_SHA}
+      cache: true
       dry-run: false
       build_args:
       - COMMIT_SHA=${CI_COMMIT_SHA}
       - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
+      username: ${CI_COMMIT_AUTHOR_NAME}
+      password:
+        from_secret: fudwin_repo_token
