@@ -2,9 +2,9 @@ import datetime
 import uuid
 import time
 
-if __name__ == "__main__":
-    
+if __name__ == "__main__":    
     myuuid = str(uuid.uuid4()) # Generate a unique identifier
+    
     while True:
         # Get the current date and time
         now = datetime.datetime.now(datetime.timezone.utc)
