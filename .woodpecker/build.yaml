@@ -10,7 +10,7 @@ steps:
       repo: sami/log_output
       dockerfile: log_output/Containerfile
       context: log_output
-      tag: ${CI_COMMIT_SHA}
+      tags: ${CI_COMMIT_SHA}
       cache: true
       dry-run: false
       build_args:
