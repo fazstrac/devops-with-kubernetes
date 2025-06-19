@@ -6,7 +6,7 @@ steps:
   - name: containerize
     image: woodpeckerci/plugin-kaniko
     settings:
-      repo: git.fudwin.xyz:8443/sami/go-gin-tutorial
+      repo: https://git.fudwin.xyz:8443/sami/devops-with-kubernetes
       dockerfile: Containerfile
       tag: ${CI_COMMIT_SHA}
       dry-run: false
