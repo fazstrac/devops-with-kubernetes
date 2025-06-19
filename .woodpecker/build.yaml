@@ -6,8 +6,8 @@ steps:
   - name: containerize
     image: woodpeckerci/plugin-kaniko
     settings:
-      registry: git.fudwin.xyz:8443
-      repo: sami/log_output
+      registry: ghcr.io
+      repo: fazstrac/log_output
       dockerfile: log_output/Containerfile
       context: log_output
       tags: ${CI_COMMIT_SHA}
@@ -16,6 +16,6 @@ steps:
       build_args:
       - COMMIT_SHA=${CI_COMMIT_SHA}
       - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
-      username: sami
+      username: fazstrac
       password:
         from_secret: fudwin_repo_token
