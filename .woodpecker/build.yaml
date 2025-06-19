@@ -6,8 +6,10 @@ steps:
   - name: containerize
     image: woodpeckerci/plugin-kaniko
     settings:
-      repo: https://git.fudwin.xyz:8443/sami/devops-with-kubernetes
-      dockerfile: Containerfile
+      registry: git.fudwin.xyz:8443
+      repo: git.fudwin.xyz:8443/sami/log_output
+      dockerfile: log_output/Containerfile
+      context: log_output
       tag: ${CI_COMMIT_SHA}
       dry-run: false
       build_args:
@@ -16,4 +18,4 @@ steps:
   - name: check
     image: alpine:latest
     commands:
-      - ls
+      - docker image ls
