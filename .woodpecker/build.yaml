@@ -16,6 +16,6 @@ steps:
       build_args:
       - COMMIT_SHA=${CI_COMMIT_SHA}
       - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
-      username: ${CI_COMMIT_AUTHOR_NAME}
+      username: sami
       password:
         from_secret: fudwin_repo_token
