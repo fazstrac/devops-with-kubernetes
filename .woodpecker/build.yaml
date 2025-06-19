@@ -7,7 +7,7 @@ steps:
     image: woodpeckerci/plugin-kaniko
     settings:
       registry: git.fudwin.xyz:8443
-      repo: git.fudwin.xyz:8443/sami/log_output
+      repo: sami/log_output
       dockerfile: log_output/Containerfile
       context: log_output
       tag: ${CI_COMMIT_SHA}
@@ -15,7 +15,3 @@ steps:
       build_args:
       - COMMIT_SHA=${CI_COMMIT_SHA}
       - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
-  - name: check
-    image: alpine:latest
-    commands:
-      - docker image ls
