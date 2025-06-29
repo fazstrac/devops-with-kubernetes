@@ -37,7 +37,7 @@ steps:
       repo: sami/dwk-project
       dockerfile: project/Containerfile
       context: project
-      tags: [${CI_COMMIT_SHA}, 'latest']
+      tags: ${CI_COMMIT_SHA}
       cache: true
       dry-run: false
       build_args:
