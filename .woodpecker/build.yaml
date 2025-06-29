@@ -4,6 +4,12 @@ when:
     include: ['project/**', '.woodpecker/build.yaml']
 
 steps:
+  test:
+    name: Run project app tests
+    image: golang:1.24-alpine
+    commands:
+      - cd project
+      - go test -v
   build:
     name: Build and push project image to ghcr.io
     image: woodpeckerci/plugin-kaniko
@@ -12,7 +18,7 @@ steps:
       repo: fazstrac/dwk-project
       dockerfile: project/Containerfile
       context: project
-      tags: 
+      tags:
         - ${CI_COMMIT_SHA}
         - latest
       cache: false
@@ -23,6 +29,3 @@ steps:
       username: fazstrac
       password:
         from_secret: fudwin_repo_token
-
-depends_on:
-  - test
