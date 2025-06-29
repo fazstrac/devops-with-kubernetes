@@ -1,4 +1,4 @@
-module fazstac/dwk-project
+module fazstrac/dwk-project
 
 go 1.24.4
 

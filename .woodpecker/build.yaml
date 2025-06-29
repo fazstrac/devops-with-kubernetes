@@ -12,7 +12,9 @@ steps:
       repo: fazstrac/dwk-project
       dockerfile: project/Containerfile
       context: project
-      tags: ${CI_COMMIT_SHA}
+      tags: 
+        - ${CI_COMMIT_SHA}
+        - latest
       cache: false
       dry-run: false
       build_args:
