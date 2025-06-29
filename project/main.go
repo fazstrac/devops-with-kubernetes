@@ -15,6 +15,7 @@ func main() {
 	}
 
 	router := setupRouter()
+	print("Server started in port %s", os.Getenv("PORT"))
 	router.Run("0.0.0.0:" + port)
 }
 
