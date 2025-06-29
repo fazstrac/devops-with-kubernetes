@@ -14,7 +14,7 @@ steps:
       dockerfile: log_output/Containerfile
       context: log_output
       tags: ${CI_COMMIT_SHA}
-      cache: true
+      cache: false
       dry-run: false
       build_args:
       - COMMIT_SHA=${CI_COMMIT_SHA}

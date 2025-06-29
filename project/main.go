@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 
@@ -15,7 +16,7 @@ func main() {
 	}
 
 	router := setupRouter()
-	print("Server started in port %s", os.Getenv("PORT"))
+	fmt.Println("Server started in port", os.Getenv("PORT"))
 	router.Run("0.0.0.0:" + port)
 }
 
