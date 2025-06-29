@@ -4,6 +4,9 @@ steps:
     when:
       event: [push, pull_request]
       branch: [main, exercise/*]
+      paths:
+        include:
+          - project/**
     image: golang:1.24-alpine
     commands:
       - cd project # Change to the project directory

@@ -4,6 +4,9 @@ steps:
     when:
       event: [push, pull_request]
       branch: main
+      paths:
+        include:
+          - project/**
     image: woodpeckerci/plugin-kaniko
     settings:
       registry: ghcr.io
@@ -24,21 +27,24 @@ steps:
     when:
       event: push
       branch: exercise/*
+      paths:
+        include:
+          - project/**
     image: woodpeckerci/plugin-kaniko
     settings:
-      registry: ghcr.io
-      repo: fazstrac/dwk-project
+      registry: git.fudwin.xyz:8443
+      repo: sami/dwk-project
       dockerfile: project/Containerfile
       context: project
       tags: ${CI_COMMIT_SHA}
       cache: true
-      dry-run: true
+      dry-run: false
       build_args:
       - COMMIT_SHA=${CI_COMMIT_SHA}
       - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
-      username: fazstrac
+      username: sami
       password:
-        from_secret: fudwin_repo_token
+        from_secret: fudwin-gitea-token
 
 depends_on:
   - test

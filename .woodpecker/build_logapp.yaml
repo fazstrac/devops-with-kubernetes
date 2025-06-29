@@ -1,6 +1,9 @@
 when:
   - event: push
-    branch: main
+    branch: [main, exercise/*]
+    paths:
+      include:
+        - log_output/**
 
 steps:
   - name: containerize
