@@ -1,0 +1,25 @@
+# Build stage
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /app
+
+# Copy go mod and sum files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the Go app (static binary)
+RUN CGO_ENABLED=0 GOOS=linux go build -o server main.go
+
+# Final stage: distroless
+FROM gcr.io/distroless/static-debian12
+
+WORKDIR /app
+
+COPY --from=builder /app/server .
+
+
+# Run the binary
+ENTRYPOINT ["/app/server"]
