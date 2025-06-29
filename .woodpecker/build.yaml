@@ -1,10 +1,10 @@
 steps:
   build:
-    name: Build and push Docker image
+    name: Build and push image to GitHub Container Registry
     when:
       event: [push, pull_request]
       branch: main
-      paths:
+      path:
         include:
           - project/**
     image: woodpeckerci/plugin-kaniko
@@ -23,26 +23,27 @@ steps:
       password:
         from_secret: fudwin_repo_token
   build_exercise:
-    name: Build and push Docker image
+    name: Build and push image to local registry
     when:
       event: push
       branch: exercise/*
-      paths:
+      path:
         include:
           - project/**
-    image: woodpeckerci/plugin-kaniko
+    image: woodpeckerci/plugin-docker-buildx
     settings:
+      platform: linux/amd64
       registry: git.fudwin.xyz:8443
       repo: sami/dwk-project
       dockerfile: project/Containerfile
       context: project
-      tags: ${CI_COMMIT_SHA}
+      tags: [${CI_COMMIT_SHA}, latest]
       cache: true
       dry-run: false
       build_args:
       - COMMIT_SHA=${CI_COMMIT_SHA}
       - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
-      username: sami
+      username: ${CI_REPO_OWNER}
       password:
         from_secret: fudwin-gitea-token
 
