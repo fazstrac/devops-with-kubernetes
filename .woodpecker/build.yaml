@@ -2,11 +2,9 @@ steps:
   build:
     name: Build and push image to GitHub Container Registry
     when:
-      event: [push, pull_request]
-      branch: [main, exercise/*]
+      event: push
       path:
-        include:
-          - project/**
+        include: ['project/**', '.woodpecker/build.yaml']
     image: woodpeckerci/plugin-kaniko
     settings:
       registry: ghcr.io

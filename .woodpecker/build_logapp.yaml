@@ -1,12 +1,11 @@
-when:
-  - event: push
-    branch: [main, exercise/*]
-    paths:
-      include:
-        - log_output/**
-
 steps:
-  - name: containerize
+  containerize:
+    when:
+      event: push
+      branch: [main, exercise/*]
+      path:
+        include:
+          - log_output/**
     image: woodpeckerci/plugin-kaniko
     settings:
       registry: ghcr.io
