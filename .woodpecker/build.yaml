@@ -1,10 +1,11 @@
+when:
+  event: push
+  path:
+    include: ['project/**', '.woodpecker/build.yaml']
+
 steps:
   build:
     name: Build and push project image to ghcr.io
-    when:
-      event: push
-      path:
-        include: ['project/**', '.woodpecker/build.yaml']
     image: woodpeckerci/plugin-kaniko
     settings:
       registry: ghcr.io
