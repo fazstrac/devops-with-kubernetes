@@ -1,17 +1,27 @@
 when:
-  - event: push
-    branch: main
+  event: push
+  path:
+    include: ['project/**', '.woodpecker/build.yaml']
 
 steps:
-  - name: containerize
+  test:
+    name: Run project app tests
+    image: golang:1.24-alpine
+    commands:
+      - cd project
+      - go test -v
+  build:
+    name: Build and push project image to ghcr.io
     image: woodpeckerci/plugin-kaniko
     settings:
       registry: ghcr.io
-      repo: fazstrac/log_output
-      dockerfile: log_output/Containerfile
-      context: log_output
-      tags: ${CI_COMMIT_SHA}
-      cache: true
+      repo: fazstrac/dwk-project
+      dockerfile: project/Containerfile
+      context: project
+      tags:
+        - ${CI_COMMIT_SHA}
+        - latest
+      cache: false
       dry-run: false
       build_args:
       - COMMIT_SHA=${CI_COMMIT_SHA}
