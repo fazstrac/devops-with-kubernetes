@@ -6,7 +6,7 @@ steps:
   - name: test
     image: golang:1.24-alpine
     commands:
-      - go test -v  # Run tests in verbose mode  
+      - go test -v ./... # Run tests in verbose mode  
   - name: build
     image: woodpeckerci/plugin-kaniko
     settings:
