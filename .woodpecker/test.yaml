@@ -1,0 +1,10 @@
+steps:
+  test:
+    name: Run tests
+    when:
+      event: [push, pull_request]
+      branch: [main, exercise/*]
+    image: golang:1.24-alpine
+    commands:
+      - cd project # Change to the project directory
+      - go test -v # Run tests in verbose mode
