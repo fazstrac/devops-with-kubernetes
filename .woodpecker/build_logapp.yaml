@@ -1,11 +1,11 @@
 steps:
   containerize:
+    name: Build and push log_app image to ghcr.io
     when:
-      event: push
-      branch: [main, exercise/*]
-      path:
-        include:
-          - log_output/**
+      - event: push
+        path:
+          include:
+            - log_output/**
     image: woodpeckerci/plugin-kaniko
     settings:
       registry: ghcr.io

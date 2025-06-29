@@ -1,6 +1,6 @@
 steps:
   build:
-    name: Build and push image to GitHub Container Registry
+    name: Build and push project image to ghcr.io
     when:
       event: push
       path:
