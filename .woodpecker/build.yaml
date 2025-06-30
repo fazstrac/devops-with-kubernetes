@@ -24,8 +24,8 @@ steps:
       cache: false
       dry-run: false
       build_args:
-      - COMMIT_SHA=${CI_COMMIT_SHA}
-      - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
+        - COMMIT_SHA=${CI_COMMIT_SHA}
+        - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
       username: fazstrac
       password:
         from_secret: fudwin_repo_token

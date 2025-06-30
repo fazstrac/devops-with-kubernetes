@@ -1,24 +1,25 @@
 when:
-  - event: push
-    path:
-      include:
-        - log_output/**
+  event: push
+  path:
+    include: ['log_output/**', '.woodpecker/build_logapp.yaml']
 
 steps:
-  containerize:
-    name: Build and push log_app image to ghcr.io
+  build:
+    name: Build and push project image to ghcr.io
     image: woodpeckerci/plugin-kaniko
     settings:
       registry: ghcr.io
       repo: fazstrac/log_output
       dockerfile: log_output/Containerfile
       context: log_output
-      tags: ${CI_COMMIT_SHA}
+      tags:
+        - ${CI_COMMIT_SHA}
+        - latest
       cache: false
       dry-run: false
       build_args:
-      - COMMIT_SHA=${CI_COMMIT_SHA}
-      - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
+        - COMMIT_SHA=${CI_COMMIT_SHA}
+        - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
       username: fazstrac
       password:
         from_secret: fudwin_repo_token
