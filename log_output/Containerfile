@@ -1,20 +1,28 @@
-# Start from the official Python build image to install dependencies
-# Not needed to use two-stage build for this example, but 
-# it's a good practice for production images
-FROM python:3.12-slim AS builder
+#
+# Containerfile for building a Go application using distroless base image
+# Log Output Application for DevOps with Kubernetes course
 
-WORKDIR /app
+# Build stage
+FROM golang:1.24-alpine AS builder
 
-# Copy application code
+WORKDIR /log_app
+
+# Copy go mod and sum files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
 COPY . .
 
-# Final distroless image
-FROM gcr.io/distroless/python3-debian12
+# Build the Go app (static binary)
+RUN CGO_ENABLED=0 GOOS=linux go build -o server main.go
+
+# Final stage: distroless
+FROM gcr.io/distroless/static-debian12
 
 WORKDIR /app
 
-# Copy installed dependencies and app code from builder
-COPY --from=builder /app /app
+COPY --from=builder /log_app/server .
 
-# Set entrypoint (replace app.py with your main file)
-ENTRYPOINT ["python3", "app.py"]
+# Run the binary
+ENTRYPOINT ["/app/server"]
