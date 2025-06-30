@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o server main.go
 
 # Final stage: distroless
 FROM gcr.io/distroless/static-debian12
-
+USER 1000:1000
 WORKDIR /app
 
 COPY --from=builder /log_app/server .
