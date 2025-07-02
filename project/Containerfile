@@ -1,7 +1,6 @@
 # Build stage
 FROM golang:1.24-alpine AS builder
 
-RUN apk add --no-cache git 
 WORKDIR /app
 
 # Copy go mod and sum files
@@ -12,7 +11,8 @@ RUN go mod download
 COPY . .
 
 # Build the Go app (static binary)
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-X main.COMMIT_ID=$(git rev-parse HEAD | cut -c 1-10)" -o server main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-X main.COMMIT_ID=${CI_COMMIT_ID}" -o server main.go
+
 
 # Final stage: distroless
 FROM gcr.io/distroless/static-debian12
