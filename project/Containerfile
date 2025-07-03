@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 
 # Build the Go app (static binary)
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-X main.COMMIT_ID=$(cat ../commit_sha)" -o server main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-X main.COMMIT_ID=$(cat commit_sha)" -o server main.go
 
 # Final stage: distroless
 FROM gcr.io/distroless/static-debian12

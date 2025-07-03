@@ -14,6 +14,7 @@ steps:
     name: Write commit SHA to file
     image: alpine:latest
     commands:
+      - cd project
       - echo ${CI_COMMIT_SHA} > commit_sha
       - echo ${CI_COMMIT_AUTHOR_EMAIL} > commit_author_email
     environment:
