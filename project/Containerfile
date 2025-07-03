@@ -4,14 +4,14 @@ FROM golang:1.24-alpine AS builder
 WORKDIR /app
 
 # Copy go mod and sum files
-COPY commit_sha go.mod go.sum ./
+COPY commit_sha commit_tag go.mod go.sum ./
 RUN go mod download
 
 # Copy source code
 COPY . .
 
 # Build the Go app (static binary)
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-X main.COMMIT_ID=$(cat commit_sha)" -o server main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-X main.COMMIT_SHA=$(cat commit_sha) -X main.COMMIT_TAG=$(cat commit_tag)" -o server main.go
 
 # Final stage: distroless
 FROM gcr.io/distroless/static-debian12

@@ -10,7 +10,8 @@ import (
 
 var (
 	// COMMIT_ID is the commit ID of the code
-	COMMIT_ID string
+	COMMIT_SHA string
+	COMMIT_TAG string
 )
 
 func main() {
@@ -37,6 +38,6 @@ func setupRouter() *gin.Engine {
 func getIndex(c *gin.Context) {
 	c.HTML(http.StatusOK, "index.html", gin.H{
 		"title": "DevOps with Kubernetes - Chapter 2 - Exercise 1.5",
-		"body":  COMMIT_ID,
+		"body":  COMMIT_SHA + " (" + COMMIT_TAG + ")",
 	})
 }
