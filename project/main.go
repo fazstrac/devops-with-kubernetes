@@ -8,6 +8,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var (
+	// COMMIT_ID is the commit ID of the code
+	COMMIT_SHA string
+	COMMIT_TAG string
+)
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -22,11 +28,16 @@ func main() {
 
 func setupRouter() *gin.Engine {
 	router := gin.Default()
+	router.LoadHTMLGlob("templates/*")
+
 	router.GET("/", getIndex)
 	// Add more routes here as needed
 	return router
 }
 
 func getIndex(c *gin.Context) {
-	c.String(http.StatusOK, "Server started in port %s", os.Getenv("PORT"))
+	c.HTML(http.StatusOK, "index.html", gin.H{
+		"title": "DevOps with Kubernetes - Chapter 2 - Exercise 1.5",
+		"body":  COMMIT_SHA + " (" + COMMIT_TAG + ")",
+	})
 }

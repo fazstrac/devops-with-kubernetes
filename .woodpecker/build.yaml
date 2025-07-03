@@ -1,5 +1,5 @@
 when:
-  event: push
+  event: [push, manual, tag]
   path:
     include: ['project/**', '.woodpecker/build.yaml']
 
@@ -10,6 +10,17 @@ steps:
     commands:
       - cd project
       - go test -v
+  write_commit_sha:
+    name: Write commit SHA to file
+    image: alpine:latest
+    commands:
+      - cd project
+      - echo ${CI_COMMIT_SHA} > commit_sha
+      - echo ${CI_COMMIT_AUTHOR_EMAIL} > commit_author_email
+      - echo ${CI_COMMIT_TAG} > commit_tag
+    environment:
+      CI_COMMIT_SHA: ${CI_COMMIT_SHA}
+      CI_COMMIT_AUTHOR_EMAIL: ${CI_COMMIT_AUTHOR_EMAIL}
   build:
     name: Build and push project image to ghcr.io
     image: woodpeckerci/plugin-kaniko
@@ -19,6 +30,7 @@ steps:
       dockerfile: project/Containerfile
       context: project
       tags:
+        - ${CI_COMMIT_TAG}
         - ${CI_COMMIT_SHA}
         - latest
       cache: false
