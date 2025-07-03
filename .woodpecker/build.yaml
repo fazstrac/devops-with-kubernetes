@@ -10,6 +10,15 @@ steps:
     commands:
       - cd project
       - go test -v
+  write_commit_sha:
+    name: Write commit SHA to file
+    image: alpine:latest
+    commands:
+      - echo ${CI_COMMIT_SHA} > commit_sha
+      - echo ${CI_COMMIT_AUTHOR_EMAIL} > commit_author_email
+    environment:
+      CI_COMMIT_SHA: ${CI_COMMIT_SHA}
+      CI_COMMIT_AUTHOR_EMAIL: ${CI_COMMIT_AUTHOR_EMAIL}
   build:
     name: Build and push project image to ghcr.io
     image: woodpeckerci/plugin-kaniko
