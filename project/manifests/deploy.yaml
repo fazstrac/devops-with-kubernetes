@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: log-output
-          image: ghcr.io/fazstrac/dwk-project:latest
+          image: ghcr.io/fazstrac/dwk-project:1.6
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

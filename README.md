@@ -9,3 +9,4 @@
 - [1.3](https://github.com/fazstrac/devops-with-kubernetes/tree/1.3/log_output)
 - [1.4](https://github.com/fazstrac/devops-with-kubernetes/tree/1.4/project)
 - [1.5](https://github.com/fazstrac/devops-with-kubernetes/tree/1.5/project)
+- [1.6](https://github.com/fazstrac/devops-with-kubernetes/tree/1.6/project)
