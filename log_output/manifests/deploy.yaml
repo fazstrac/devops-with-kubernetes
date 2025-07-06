@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: log-output
-          image: ghcr.io/fazstrac/log_output:09c7ad1f3f6358cfad829c68499919632a61aa27
+          image: ghcr.io/fazstrac/log_output:latest
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
