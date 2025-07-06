@@ -4,12 +4,8 @@ metadata:
   name: log-output-ingress
   namespace: dwk-mooc
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.tls.certresolver: resolver1
+    traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
-  tls:
-    - hosts:
-        - log-output.fudwin.xyz
   rules:
     - host: log-output.fudwin.xyz
       http:
