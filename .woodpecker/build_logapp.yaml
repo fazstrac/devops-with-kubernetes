@@ -8,13 +8,13 @@ steps:
     name: Run project app tests
     image: golang:1.24-alpine
     commands:
-      - cd project
+      - cd log_output
       - go test -v
   write_commit_sha:
     name: Write commit SHA to file
     image: alpine:latest
     commands:
-      - cd project
+      - cd log_output
       - echo ${CI_COMMIT_SHA} > commit_sha
       - echo ${CI_COMMIT_AUTHOR_EMAIL} > commit_author_email
       - echo ${CI_COMMIT_TAG} > commit_tag
