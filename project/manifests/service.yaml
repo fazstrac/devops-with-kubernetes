@@ -4,12 +4,10 @@ metadata:
   name: project-svc
   namespace: dwk-mooc
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
-    app: project # This is the app as declared in the deployment.
+    app: project
   ports:
-    - name: http
-      nodePort: 30080 # This is the port that is available outside. Value for nodePort can be between 30000-32767
+    - port: 3000
       protocol: TCP
-      port: 1234 # This is a port that is available to the cluster, in this case it can be ~ anything
-      targetPort: 8080 # This is the target port
+      targetPort: 8080
