@@ -1,28 +1,103 @@
+# Woodpecker CI configuration for Devops with Kubernetes project
+#
 when:
   event: [push, manual, tag]
-  path:
-    include: ['project/**', '.woodpecker/build.yaml']
 
 steps:
-  test:
-    name: Run project app tests
-    image: golang:1.24-alpine
-    commands:
-      - cd project
-      - go test -v
   write_commit_sha:
     name: Write commit SHA to file
     image: alpine:latest
     commands:
-      - cd project
-      - echo ${CI_COMMIT_SHA} > commit_sha
-      - echo ${CI_COMMIT_AUTHOR_EMAIL} > commit_author_email
-      - echo ${CI_COMMIT_TAG} > commit_tag
-    environment:
-      CI_COMMIT_SHA: ${CI_COMMIT_SHA}
-      CI_COMMIT_AUTHOR_EMAIL: ${CI_COMMIT_AUTHOR_EMAIL}
-  build:
+      - echo "Writing commit SHA and author email to files"  
+      - echo -n ${CI_COMMIT_SHA} > commit_sha
+      - echo -n ${CI_COMMIT_TAG} > commit_tag
+
+  # Log output app tests and build
+  test_log_output:
+    name: Run log_output app tests
+    when:
+      path:
+        include: ['log_output/**', '.woodpecker/build.yaml']
+    image: golang:1.24-alpine
+    commands:
+      - cd log_output
+      - go test -v
+  build_log_output:
     name: Build and push project image to ghcr.io
+    depends_on: [write_commit_sha, test_log_output]
+    when:
+      path:
+        include: ['log_output/**', '.woodpecker/build.yaml']
+    image: woodpeckerci/plugin-kaniko
+    settings:
+      registry: ghcr.io
+      repo: fazstrac/log_output
+      dockerfile: log_output/Containerfile
+      context: log_output
+      tags:
+        - ${CI_COMMIT_TAG}      
+        - ${CI_COMMIT_SHA}
+        - latest
+      cache: false
+      dry-run: false
+      build_args:
+        - COMMIT_SHA=${CI_COMMIT_SHA}
+        - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
+      username: fazstrac
+      password:
+        from_secret: fudwin_repo_token
+
+  # Ping pong app tests and build
+  test_pingpong:
+    name: Run pingpong app tests
+    when:
+      path:
+        include: ['pong_app/**', '.woodpecker/build.yaml']    
+    image: golang:1.24-alpine
+    commands:
+      - cd pong_app
+      - go test -v
+  build_pingpong:
+    name: Build and push pong_app image to ghcr.io
+    depends_on: [write_commit_sha, test_pingpong]
+    when:
+      path:
+        include: ['pong_app/**', '.woodpecker/build.yaml']    
+    image: woodpeckerci/plugin-kaniko
+    settings:
+      registry: ghcr.io
+      repo: fazstrac/dwk-pong_app
+      dockerfile: pong_app/Containerfile
+      context: pong_app
+      tags:
+        - ${CI_COMMIT_TAG}
+        - ${CI_COMMIT_SHA}
+        - latest
+      cache: false
+      dry-run: false
+      build_args:
+        - COMMIT_SHA=${CI_COMMIT_SHA}
+        - COMMIT_AUTHOR_EMAIL=${CI_COMMIT_AUTHOR_EMAIL}
+      username: fazstrac
+      password:
+        from_secret: fudwin_repo_token
+
+  # Project app tests and build
+  test_project:
+    name: Run project app tests
+    when:
+      path:
+        include: ['project/**', '.woodpecker/build.yaml']    
+    image: golang:1.24-alpine
+    commands:
+      - cd project
+      - go test -v
+  build_project:
+    name: Build and push project image to ghcr.io
+    depends_on: [write_commit_sha, test_project]
+    when:
+      path:
+        include: ['project/**', '.woodpecker/build.yaml']
     image: woodpeckerci/plugin-kaniko
     settings:
       registry: ghcr.io
