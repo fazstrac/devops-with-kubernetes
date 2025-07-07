@@ -24,7 +24,6 @@ steps:
       - go test -v
   build_log_output:
     name: Build and push project image to ghcr.io
-    depends_on: [write_commit_sha, test_log_output]
     when:
       path:
         include: ['log_output/**', '.woodpecker/build.yaml']
@@ -59,7 +58,6 @@ steps:
       - go test -v
   build_pingpong:
     name: Build and push pong_app image to ghcr.io
-    depends_on: [write_commit_sha, test_pingpong]
     when:
       path:
         include: ['pong_app/**', '.woodpecker/build.yaml']    
@@ -94,7 +92,6 @@ steps:
       - go test -v
   build_project:
     name: Build and push project image to ghcr.io
-    depends_on: [write_commit_sha, test_project]
     when:
       path:
         include: ['project/**', '.woodpecker/build.yaml']
