@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: project
-          image: ghcr.io/fazstrac/dwk-project:latest
+          image: ghcr.io/fazstrac/dwk-project:1.8
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
