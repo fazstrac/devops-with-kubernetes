@@ -53,7 +53,7 @@ steps:
 
   # Build and push log-output image to ghcr.io
   build_log-output:
-    name: Build and push project image to ghcr.io
+    name: Build and push log-output image to ghcr.io
     when:
       path:
         include: ['log-output/**', '.woodpecker/build.yaml']

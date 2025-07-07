@@ -29,7 +29,7 @@ func TestIncrCounter(t *testing.T) {
 
 func TestIncrCounterEndpoint(t *testing.T) {
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/", nil)
+	req, _ := http.NewRequest("GET", "/pingpong", nil)
 	testRouter.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
 }

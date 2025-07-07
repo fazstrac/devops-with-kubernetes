@@ -33,7 +33,7 @@ func main() {
 func setupRouter() *gin.Engine {
 	router := gin.Default()
 
-	router.GET("/*any", func(c *gin.Context) {
+	router.GET("/pingpong", func(c *gin.Context) {
 		c.String(http.StatusOK, incrCounter())
 	})
 	return router
