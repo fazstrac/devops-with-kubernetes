@@ -37,7 +37,7 @@ func setupRouter() *gin.Engine {
 
 func getIndex(c *gin.Context) {
 	c.HTML(http.StatusOK, "index.html", gin.H{
-		"title": "DevOps with Kubernetes - Chapter 2 - Exercise 1.6",
+		"title": "DevOps with Kubernetes - Chapter 2 - Exercise 1.8",
 		"body":  COMMIT_SHA + " (" + COMMIT_TAG + ")",
 	})
 }
