@@ -16,4 +16,4 @@ spec:
               service:
                 name: log-output-svc
                 port:
-                  number: 2345
+                  number: 2000

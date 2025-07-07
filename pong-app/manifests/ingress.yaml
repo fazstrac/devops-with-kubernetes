@@ -10,10 +10,17 @@ spec:
     - host: log-output.fudwin.xyz
       http:
         paths:
-          - path: /
-            pathType: Prefix
+          - path: /pingpong
+            pathType: Exact
+            backend:
+              service:
+                name: pong-app-svc
+                port:
+                  number: 4000
+          - path: /log
+            pathType: Exact
             backend:
               service:
                 name: log-output-svc
                 port:
-                  number: 2345
+                  number: 2000

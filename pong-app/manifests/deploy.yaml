@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: log-output
+  name: pong-app
   namespace: dwk-mooc
   labels:
-    app: log-output
+    app: pong-app
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: log-output
+      app: pong-app
   template:
     metadata:
       labels:
-        app: log-output
+        app: pong-app
     spec:
       containers:
-        - name: log-output
-          image: ghcr.io/fazstrac/log_output:1.7
+        - name: pong-app
+          image: ghcr.io/fazstrac/dwk-pong_app:latest
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

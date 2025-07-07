@@ -9,30 +9,60 @@ steps:
     image: alpine:latest
     commands:
       - echo "Writing commit SHA and author email to files"  
-      - echo -n ${CI_COMMIT_SHA} | tee project/commit_sha log_output/commit_sha pong_app/commit_sha
-      - echo -n ${CI_COMMIT_TAG} | tee project/commit_tag log_output/commit_tag pong_app/commit_tag
+      - echo -n ${CI_COMMIT_SHA} | tee project/commit_sha log-output/commit_sha pong-app/commit_sha
+      - echo -n ${CI_COMMIT_TAG} | tee project/commit_tag log-output/commit_tag pong-app/commit_tag
+
+  #
+  # Run tests for each app before building
+  #
 
   # Log output app tests and build
-  test_log_output:
-    name: Run log_output app tests
+  test_log-output:
+    name: Run log-output app tests
     when:
       path:
-        include: ['log_output/**', '.woodpecker/build.yaml']
+        include: ['log-output/**', '.woodpecker/build.yaml']
     image: golang:1.24-alpine
     commands:
-      - cd log_output
+      - cd log-output
       - go test -v
-  build_log_output:
+  # Ping pong app tests and build
+  test_pingpong:
+    name: Run pingpong app tests
+    when:
+      path:
+        include: ['pong-app/**', '.woodpecker/build.yaml']    
+    image: golang:1.24-alpine
+    commands:
+      - cd pong-app
+      - go test -v
+  # Project app tests and build
+  test_project:
+    name: Run project app tests
+    when:
+      path:
+        include: ['project/**', '.woodpecker/build.yaml']    
+    image: golang:1.24-alpine
+    commands:
+      - cd project
+      - go test -v
+
+  #
+  # Enter build stage if all tests pass
+  #
+
+  # Build and push log-output image to ghcr.io
+  build_log-output:
     name: Build and push project image to ghcr.io
     when:
       path:
-        include: ['log_output/**', '.woodpecker/build.yaml']
+        include: ['log-output/**', '.woodpecker/build.yaml']
     image: woodpeckerci/plugin-kaniko
     settings:
       registry: ghcr.io
-      repo: fazstrac/log_output
-      dockerfile: log_output/Containerfile
-      context: log_output
+      repo: fazstrac/log-output
+      dockerfile: log-output/Containerfile
+      context: log-output
       tags:
         - ${CI_COMMIT_TAG}      
         - ${CI_COMMIT_SHA}
@@ -46,27 +76,18 @@ steps:
       password:
         from_secret: fudwin_repo_token
 
-  # Ping pong app tests and build
-  test_pingpong:
-    name: Run pingpong app tests
-    when:
-      path:
-        include: ['pong_app/**', '.woodpecker/build.yaml']    
-    image: golang:1.24-alpine
-    commands:
-      - cd pong_app
-      - go test -v
+  # Build and push pong-app image to ghcr.io
   build_pingpong:
-    name: Build and push pong_app image to ghcr.io
+    name: Build and push pong-app image to ghcr.io
     when:
       path:
-        include: ['pong_app/**', '.woodpecker/build.yaml']    
+        include: ['pong-app/**', '.woodpecker/build.yaml']    
     image: woodpeckerci/plugin-kaniko
     settings:
       registry: ghcr.io
-      repo: fazstrac/dwk-pong_app
-      dockerfile: pong_app/Containerfile
-      context: pong_app
+      repo: fazstrac/dwk-pong-app
+      dockerfile: pong-app/Containerfile
+      context: pong-app
       tags:
         - ${CI_COMMIT_TAG}
         - ${CI_COMMIT_SHA}
@@ -80,16 +101,8 @@ steps:
       password:
         from_secret: fudwin_repo_token
 
-  # Project app tests and build
-  test_project:
-    name: Run project app tests
-    when:
-      path:
-        include: ['project/**', '.woodpecker/build.yaml']    
-    image: golang:1.24-alpine
-    commands:
-      - cd project
-      - go test -v
+
+  # Build and push project image to ghcr.io
   build_project:
     name: Build and push project image to ghcr.io
     when:

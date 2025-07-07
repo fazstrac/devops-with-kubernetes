@@ -8,6 +8,6 @@ spec:
   selector:
     app: log-output
   ports:
-    - port: 2345
+    - port: 2000
       protocol: TCP
       targetPort: 8080
