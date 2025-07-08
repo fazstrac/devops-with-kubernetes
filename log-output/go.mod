@@ -1,4 +1,4 @@
-module fazstrac/dwk-log_output
+module fazstrac/dwk-log-output
 
 go 1.24.4
 

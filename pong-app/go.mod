@@ -1,4 +1,4 @@
-module fazstrac/dwk-log_output
+module fazstrac/dwk-pong-app
 
 go 1.24.4
 
