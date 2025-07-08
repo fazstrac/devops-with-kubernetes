@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pong-app
+  namespace: dwk-mooc
+  labels:
+    app: pong-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pong-app
+  template:
+    metadata:
+      labels:
+        app: pong-app
+    spec:
+      containers:
+        - name: pong-app
+          image: ghcr.io/fazstrac/dwk-pong-app:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+ 

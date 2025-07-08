@@ -16,4 +16,12 @@ spec:
               service:
                 name: log-output-svc
                 port:
-                  number: 2345
+                  number: 2000        
+          - path: /pingpong
+            pathType: Exact
+            backend:
+              service:
+                name: pong-app-svc
+                port:
+                  number: 4000
+
