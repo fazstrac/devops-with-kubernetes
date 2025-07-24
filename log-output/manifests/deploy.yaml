@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: log-output-app1
-          image: forge.fudwin.xyz:8443/sami/dwk-log-output-app1:latest
+          image: ghcr.io/fazstrac/dwk-log-output-app1:rel-1.10
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -30,7 +30,7 @@ spec:
             - name: log-volume
               mountPath: /data
         - name: log-output-app2
-          image: forge.fudwin.xyz:8443/sami/dwk-log-output-app2:latest
+          image: ghcr.io/fazstrac/dwk-log-output-app2:rel-1.10
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
