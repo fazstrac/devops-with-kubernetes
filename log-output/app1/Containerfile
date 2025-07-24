@@ -5,6 +5,9 @@
 # Build stage
 FROM golang:1.24-alpine AS builder
 
+ARG COMMIT_SHA
+ARG COMMIT_TAG
+
 WORKDIR /log_app
 
 # Copy go mod and sum files
@@ -16,15 +19,15 @@ COPY . .
 
 # Build the Go app (static binary)
 RUN CGO_ENABLED=0 GOOS=linux go build \
-  -ldflags "-X main.COMMIT_SHA=$(cat commit_sha) -X main.COMMIT_TAG=$(cat commit_tag)" \
+  -ldflags "-X main.COMMIT_SHA=${COMMIT_SHA} -X main.COMMIT_TAG=${COMMIT_TAG}" \
   -o server main.go
-  
+
 # Final stage: distroless
-FROM gcr.io/distroless/static-debian12
-USER 1000:1000
+FROM scratch
+WORKDIR /data
 WORKDIR /app
 
 COPY --from=builder /log_app/server .
 
 # Run the binary
-ENTRYPOINT ["/app/server"]
+ENTRYPOINT ["/app/server", "/data/log.txt"]

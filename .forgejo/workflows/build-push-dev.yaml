@@ -1,0 +1,63 @@
+name: Build and Test Go Application
+on:
+  push:
+    branches:
+    - 'exercise/*'
+
+env:
+  GOPATH:  /home/runner/go/go_path
+  GOCACHE: /home/runner/go/go_cache
+  CGO_ENABLED: 0
+  GOOS: linux
+
+jobs:
+  build-and-push-project:
+    runs-on: linux_amd64
+    strategy:
+      matrix:
+        app: [log-output/app1, log-output/app2, pong-app, project]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24.4'
+      - name: Install dependencies
+        run: |
+          cd ${{ matrix.app }}
+          go mod tidy
+      - name: Run linter
+        run: |
+          cd ${{ matrix.app }}
+          go vet ./...
+      - name: Run tests
+        run: |
+          cd ${{ matrix.app }}
+          go test ./...
+      - name: Build application
+        run: |
+          set -e
+          cd ${{ matrix.app }}
+          APP=$(echo -n dwk-${{ matrix.app }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          COMMIT_TAG=$(echo -n dev-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          echo "Building application: $APP. SHA: ${{ env.FORGEJO_SHA }}. Tag: ${COMMIT_TAG}."
+          podman build \
+            --build-arg=COMMIT_SHA=${{ env.FORGEJO_SHA }} \
+            --build-arg=COMMIT_TAG=${COMMIT_TAG} \
+            --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:latest \
+            --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} \
+            --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:${COMMIT_TAG} .
+      - name: Push container image
+        run: |
+          set -e
+          cd ${{ matrix.app }}
+          APP=$(echo -n dwk-${{ matrix.app }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          COMMIT_TAG=$(echo -n dev-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          echo "Pushing application: $APP."
+          podman login ${{ vars.DEV_REGISTRY_URL }} --username ${{ vars.DEV_REGISTRY_USER }} --password ${{ secrets.DEV_REGISTRY_TOKEN }}
+          podman push  ${{ vars.DEV_REGISTRY_URL }}/${APP}:latest && \
+          podman push  ${{ vars.DEV_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} && \
+          podman push  ${{ vars.DEV_REGISTRY_URL }}/${APP}:${COMMIT_TAG}

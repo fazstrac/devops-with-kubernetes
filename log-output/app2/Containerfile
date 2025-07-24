@@ -5,10 +5,10 @@
 # Build stage
 FROM golang:1.24-alpine AS builder
 
-WORKDIR /log_app
-
 ARG COMMIT_SHA
 ARG COMMIT_TAG
+
+WORKDIR /log_app
 
 # Copy go mod and sum files
 COPY go.mod go.sum ./
@@ -25,9 +25,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # Final stage: distroless
 FROM scratch
 USER 1000:1000
+WORKDIR /data
 WORKDIR /app
 
 COPY --from=builder /log_app/server .
 
 # Run the binary
-ENTRYPOINT ["/app/server"]
+ENTRYPOINT ["/app/server", "/data/log.txt"]

@@ -17,7 +17,8 @@ spec:
     spec:
       containers:
         - name: pong-app
-          image: ghcr.io/fazstrac/dwk-pong-app:1.9
+          image: forge.fudwin.xyz:8443/sami/dwk-pong-app:latest
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -25,4 +26,3 @@ spec:
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
- 

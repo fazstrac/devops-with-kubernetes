@@ -1,0 +1,52 @@
+name: Build and Test Go Application
+on:
+  release:
+    types:
+    - published
+
+env:
+  GOPATH:  /home/runner/go/go_path
+  GOCACHE: /home/runner/go/go_cache
+  CGO_ENABLED: 0
+  GOOS: linux
+  REGISTRY_URL:   ${{secrets.PUB_REGISTRY_URL}}
+  REGISTRY_USER:  ${{secrets.PUB_REGISTRY_USER}}
+  REGISTRY_TOKEN: ${{secrets.PUB_REGISTRY_TOKEN}}
+  COMMIT_SHA:     ${{ FORGEJO_SHA }}
+  COMMIT_TAG:     ${{ FORGEJO_REF_NAME }}
+
+jobs:
+  build-and-push-project-github:
+    runs-on: linux_amd64
+    strategy:
+      matrix:
+        app: [log-output/app1, log-output/app2, pong-app, project]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build application
+        run: |
+          set -e
+          cd ${{ matrix.app }}
+          APP=$(echo -n dwk-${{ matrix.app }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          COMMIT_TAG=$(echo -n rel-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          echo "Building application: $APP. SHA: ${{ env.FORGEJO_SHA }}. Tag: ${COMMIT_TAG}."
+          podman build \
+            --build-arg=COMMIT_SHA=${{ env.FORGEJO_SHA }} \
+            --build-arg=COMMIT_TAG=${COMMIT_TAG} \
+            --tag ${{ vars.PUB_REGISTRY_URL }}/${APP}:latest \
+            --tag ${{ vars.PUB_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} \
+            --tag ${{ vars.PUB_REGISTRY_URL }}/${APP}:${COMMIT_TAG} .
+      - name: Push container image
+        run: |
+          set -e
+          cd ${{ matrix.app }}
+          APP=$(echo -n dwk-${{ matrix.app }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          COMMIT_TAG=$(echo -n rel-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          echo "Pushing application: $APP."
+          podman login ${{ vars.PUB_REGISTRY_URL }} --username ${{ vars.PUB_REGISTRY_USER }} --password ${{ secrets.PUB_REGISTRY_TOKEN }}
+          podman push  ${{ vars.PUB_REGISTRY_URL }}/${APP}:latest && \
+          podman push  ${{ vars.PUB_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} && \
+          podman push  ${{ vars.PUB_REGISTRY_URL }}/${APP}:${COMMIT_TAG}

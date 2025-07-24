@@ -16,8 +16,9 @@ spec:
         app: log-output
     spec:
       containers:
-        - name: log-output
-          image: ghcr.io/fazstrac/log_output:1.7
+        - name: log-output-app1
+          image: forge.fudwin.xyz:8443/sami/dwk-log-output-app1:latest
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -25,4 +26,22 @@ spec:
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
- 
+          volumeMounts:
+            - name: log-volume
+              mountPath: /data
+        - name: log-output-app2
+          image: forge.fudwin.xyz:8443/sami/dwk-log-output-app2:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: log-volume
+              mountPath: /data
+      volumes:
+        - name: log-volume
+          emptyDir: {}
