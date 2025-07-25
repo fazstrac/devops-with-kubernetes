@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: pong-app
-          image: ghcr.io/fazstrac/dwk-pong-app:rel-1-10
+          image: forge.fudwin.xyz:8443/sami/dwk-pong-app:latest
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -26,3 +26,11 @@ spec:
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
+          volumeMounts:
+            - name: shared-volume
+              mountPath: /data
+      volumes:
+        - name: shared-volume
+          persistentVolumeClaim:
+            claimName: log-pong-pvc
+
