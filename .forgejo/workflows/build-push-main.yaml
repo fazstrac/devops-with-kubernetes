@@ -9,11 +9,6 @@ env:
   GOCACHE: /home/runner/go/go_cache
   CGO_ENABLED: 0
   GOOS: linux
-  REGISTRY_URL:   ${{secrets.PUB_REGISTRY_URL}}
-  REGISTRY_USER:  ${{secrets.PUB_REGISTRY_USER}}
-  REGISTRY_TOKEN: ${{secrets.PUB_REGISTRY_TOKEN}}
-  COMMIT_SHA:     ${{ FORGEJO_SHA }}
-  COMMIT_TAG:     ${{ FORGEJO_REF_NAME }}
 
 jobs:
   build-and-push-project-github:
