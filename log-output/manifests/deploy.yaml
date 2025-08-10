@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: log-output-app1
-          image: ghcr.io/fazstrac/dwk-log-output-app1:rel-1-10
+          image: ghcr.io/fazstrac/dwk-log-output-app1::rel-1-11
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -27,10 +27,10 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           volumeMounts:
-            - name: log-volume
+            - name: shared-volume
               mountPath: /data
         - name: log-output-app2
-          image: ghcr.io/fazstrac/dwk-log-output-app2:rel-1-10
+          image: ghcr.io/fazstrac/dwk-log-output-app2::rel-1-11
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -40,8 +40,9 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           volumeMounts:
-            - name: log-volume
+            - name: shared-volume
               mountPath: /data
       volumes:
-        - name: log-volume
-          emptyDir: {}
+        - name: shared-volume
+          persistentVolumeClaim:
+            claimName: log-pong-pvc

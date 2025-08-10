@@ -12,3 +12,16 @@
 - [1.8](https://github.com/fazstrac/devops-with-kubernetes/tree/1.8/project)
 - [1.9](https://github.com/fazstrac/devops-with-kubernetes/tree/1.9/pong-app)
 - [1.10](https://github.com/fazstrac/devops-with-kubernetes/tree/1.10/log-output)
+- [1.11](https://github.com/fazstrac/devops-with-kubernetes/tree/1.11/log-output)
+
+## Directory structure
+
+High-level view:
+```
+├── LICENSE
+├── log-output  # Log application lies here
+├── manifests   # General manifests pertaining to both Log application and Pong-app
+├── pong-app    # Pong-app here
+├── project     # The course project
+└── README.md   # This files
+```

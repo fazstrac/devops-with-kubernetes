@@ -31,4 +31,4 @@ WORKDIR /app
 COPY --from=builder /log_app/server .
 
 # Run the binary
-ENTRYPOINT ["/app/server", "/data/log.txt"]
+ENTRYPOINT ["/app/server", "/data/log.txt", "/data/counter.txt"]

@@ -13,14 +13,20 @@ import (
 var testRouter *gin.Engine
 
 func TestMain(m *testing.M) {
-	fp, err := os.CreateTemp("/tmp", "log_output_app2_test_*.log")
+	fp, err := os.CreateTemp("/tmp", "log_output_app2_test_*.file1")
 	if err != nil {
-		panic("Failed to create temporary log file: " + err.Error())
+		panic("File1: Failed to create temporary file: " + err.Error())
 	}
 	defer os.Remove(fp.Name())
 
+	fp2, err2 := os.CreateTemp("/tmp", "log_output_app2_test_*.file2")
+	if err2 != nil {
+		panic("File2: Failed to create temporary file: " + err2.Error())
+	}
+	defer os.Remove(fp2.Name())
+
 	os.Setenv("PORT", "8080")
-	testRouter = setupRouter(fp.Name())
+	testRouter = setupRouter(fp.Name(), fp2.Name())
 	os.Exit(m.Run())
 }
 

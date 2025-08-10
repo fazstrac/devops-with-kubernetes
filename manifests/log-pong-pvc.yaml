@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: log-pong-pvc
+  namespace: dwk-mooc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  volumeName: dwk-mooc-log-pong-pv
+  storageClassName: ""

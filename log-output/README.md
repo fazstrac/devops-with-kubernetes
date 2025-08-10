@@ -2,7 +2,9 @@
 
 ## Purpose
 
-At the moment its purpose is to respond with a log of saved current date and a random UUID on `/log` endpoint. UUID will reset on restart, no persistence.
+At the moment its purpose is to respond with a log of saved current date and a random UUID on `/log` endpoint + a count of hits on the `/pingpong` endpoint. UUID will reset on restart, but the number of pingpongs and the log itself is persisted to files using PersistentVolumeClaim in [`../manifests/log-pong-pvc.yaml`](../manifests/log-pong-pvc.yaml).
+
+Concurrency on file access is ignored at the moment. If needed, that should be handled using different means.
 
 ## Files
 
@@ -23,13 +25,14 @@ log-output
 │   ├── main.go         # Main file - this one reads the data file and prints it out on the web endpoint
 │   └── main_test.go    # Unit tests for main file
 ├── manifests
-│   ├── deploy.yaml     # Use this to deploy Log-output appliction - this one creates an emptyDir volume
-|   |                   # which is shared between the containers. Should be templatable for simpler switch
-|   |                   # from my dev environment to "release" environment via Github.
+│   ├── deploy.yaml     # Use this to deploy Log-output appliction - this one mount a shared volume from
+|   |                   # PersistentVolumeClaim, which is shared between the containers and the pong app.
+|   |                   # Should be templatable for simpler switch from my dev environment to
+|   |                   # "release" environment via Github.
 │   ├── ingress.yaml    # Defines the Ingress, copied from the pong-app -- should be refactored into one
 │   └── service.yaml    # Defines Log-output app service
 └── README.md           # This file
 ```
 ## See also
 
-[Pong app](../pong-app) and [Exercise 1.10 in Chapter 2 / Introduction to networking](https://courses.mooc.fi/org/uh-cs/courses/devops-with-kubernetes/chapter-2/introduction-to-networking)
+[Pong app](../pong-app) and [Exercise 1.11 in Chapter 2 / Introduction to Storage](https://courses.mooc.fi/org/uh-cs/courses/devops-with-kubernetes/chapter-2/introduction-to-storage)

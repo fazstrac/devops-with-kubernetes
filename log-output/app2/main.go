@@ -24,22 +24,23 @@ func main() {
 	arglen := len(os.Args[1:])
 
 	if arglen == 0 {
-		fmt.Printf("Usage: %s <filename>\n", os.Args[0])
+		fmt.Printf("Usage: %s <logfilename> <counterfilename>\n", os.Args[0])
 		os.Exit(1)
-	} else if arglen > 1 {
-		fmt.Printf("Please give only one filename. Usage: %s <filename>\n", os.Args[0])
+	} else if arglen != 2 {
+		fmt.Printf("Please give only two filenames. Usage: %s <logfilename> <counterfilename>\n", os.Args[0])
 		os.Exit(1)
 	}
 
-	fname := os.Args[1]
+	logFName := os.Args[1]
+	counterFName := os.Args[2]
 
-	fmt.Printf("Starting app2 (SHA %s) with file %s\n", COMMIT_SHA, fname)
+	fmt.Printf("Starting app2 (SHA %s) with files %s and %s.\n", COMMIT_SHA, logFName, counterFName)
 
-	router := setupRouter(fname)
+	router := setupRouter(logFName, counterFName)
 	router.Run("0.0.0.0:" + port)
 }
 
-func setupRouter(fname string) *gin.Engine {
+func setupRouter(logFName string, counterFName string) *gin.Engine {
 	router := gin.Default()
 
 	router.GET("/", func(c *gin.Context) {
@@ -47,20 +48,34 @@ func setupRouter(fname string) *gin.Engine {
 	})
 
 	router.GET("/log", func(c *gin.Context) {
-		fp, err := os.OpenFile(fname, os.O_RDONLY, 0644)
+		fp, err := os.OpenFile(logFName, os.O_RDONLY, 0644)
 		if err != nil {
 			c.String(http.StatusInternalServerError, "Error opening log file: %v", err)
 			return
 		}
 		defer fp.Close()
 
-		log_data, err := os.ReadFile(fname)
-		if err != nil {
-			c.String(http.StatusInternalServerError, "Error reading log file: %v", err)
+		counterFP, err2 := os.OpenFile(counterFName, os.O_RDONLY, 0644)
+
+		// This can mean the the pong app has not been run yet. Not actually an error.
+		// It should be handled gracefully, but for now let's just return an error message.
+		if err2 != nil {
+			c.String(http.StatusInternalServerError, "Error opening counter file: %v", err2)
+			return
+		}
+		defer counterFP.Close()
+
+		log_data, err3 := os.ReadFile(logFName)
+		counter_data, err4 := os.ReadFile(counterFName)
+
+		if err3 != nil || err4 != nil {
+			c.String(http.StatusInternalServerError, "Error reading file: %v %v", err3, err4)
 			return
 		}
 
-		c.String(http.StatusOK, string(log_data))
+		message := string(log_data) + "Ping / Pongs: " + string(counter_data)
+
+		c.String(http.StatusOK, message)
 	})
 	return router
 }
