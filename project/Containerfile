@@ -17,6 +17,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build \
   -ldflags "-X main.COMMIT_SHA=${COMMIT_SHA} -X main.COMMIT_TAG=${COMMIT_TAG}" \
   -o server main.go
+RUN mkdir -p /app/static
 
 # Final stage: distroless
 # Possibly can be replaced with FROM scratch
@@ -24,10 +25,13 @@ FROM gcr.io/distroless/static-debian12
 USER 1000:1000
 ENV GIN_MODE=release
 
+
 WORKDIR /app
 
 COPY --from=builder /app/server .
+COPY --from=builder --chown=1000:1000 /app/static /app/static
 COPY --from=builder /app/templates /app/templates
+
 
 # Run the binary
 ENTRYPOINT ["/app/server"]

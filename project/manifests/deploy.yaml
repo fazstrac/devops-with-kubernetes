@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: project
-          image: ghcr.io/fazstrac/dwk-project:rel-1-11
+          image: forge.fudwin.xyz:8443/sami/dwk-project:rel-1-11
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
