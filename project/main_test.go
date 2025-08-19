@@ -13,8 +13,6 @@ import (
 // Test endpoints for the application
 
 func TestGetIndex(t *testing.T) {
-	os.Setenv("PORT", "8080") // Ensure PORT is set for the handler
-
 	app := &App{
 		ImagePath: "./cache/image.jpg", // Use a temporary image path for testing
 	}
@@ -139,6 +137,6 @@ func TestReadImageNonExistentFile(t *testing.T) {
 	imagePath := dir + "/non_existent_image.jpg"
 
 	data, err := readImage(imagePath)
-	assert.NoError(t, err, "readImage should not return an error for non-existent file")
+	assert.Error(t, err, "readImage should return an error for non-existent file")
 	assert.Empty(t, data, "readImage should return empty data for non-existent file")
 }
