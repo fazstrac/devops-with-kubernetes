@@ -33,14 +33,14 @@ func setupRouter() *gin.Engine {
 	router.LoadHTMLGlob("templates/*")
 
 	router.GET("/", getIndex)
-	router.GET("/image", getImage)
+	router.GET("/image.jpg", getImage)
 	// Add more routes here as needed
 	return router
 }
 
 func getIndex(c *gin.Context) {
 	c.HTML(http.StatusOK, "index.html", gin.H{
-		"title": "DevOps with Kubernetes - Chapter 2 - Exercise 1.8",
+		"title": "DevOps with Kubernetes - Chapter 2 - Exercise 1.12",
 		"body":  COMMIT_SHA + " (" + COMMIT_TAG + ")",
 	})
 }
@@ -77,7 +77,7 @@ func fetchImage() error {
 	}
 	defer resp.Body.Close()
 
-	out, err := os.Create("./static/image.jpg")
+	out, err := os.Create("./cache/image.jpg")
 	if err != nil {
 		return err
 	}
@@ -89,7 +89,7 @@ func fetchImage() error {
 
 func isImageFresh() bool {
 	// Check if the image file exists and is not older than 24 hours
-	info, err := os.Stat("./static/image.jpg")
+	info, err := os.Stat("./cache/image.jpg")
 	if err != nil {
 		return false
 	}
@@ -98,7 +98,7 @@ func isImageFresh() bool {
 
 func readImage() (string, error) {
 	// Read the image file and return its content
-	data, err := os.ReadFile("/app/static/image.jpg")
+	data, err := os.ReadFile("/app/cache/image.jpg")
 	if err != nil {
 		return "", err
 	}
