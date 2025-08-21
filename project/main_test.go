@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,7 +26,21 @@ func TestGetIndex(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestGetImage(t *testing.T) {
+// TestGetImageSuccess verifies that the getImage handler correctly serves an image.
+// It sets up a temporary HTTP server to simulate an image source, creates a temporary directory
+// for the image file, and configures the application to use these test resources.
+// The test sends a GET request to the image endpoint and asserts that the response status code,
+// content type, and body match the expected values, ensuring the handler's correctness.
+func TestGetImageSuccess(t *testing.T) {
+	testImage := []byte("This is a test image content")
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.WriteHeader(http.StatusOK)
+		w.Write(testImage)
+	}))
+	defer ts.Close()
+
 	// This test checks if the getImage handler works correctly.
 	// It creates a temporary directory for the image and checks if the response is correct.
 	dir, err := os.MkdirTemp(os.TempDir(), "test_get_image_*")
@@ -34,7 +49,11 @@ func TestGetImage(t *testing.T) {
 
 	app := &App{
 		ImagePath: dir + "/image.jpg", // Use a temporary image path for testing
+		ImageUrl:  ts.URL,             // Use the test server URL
 	}
+
+	fmt.Println("Image URL:", app.ImageUrl) // Debugging output to verify the URL
+
 	router := setupRouter(app) // Use the same router logic as in main.go
 
 	w := httptest.NewRecorder()
@@ -43,11 +62,48 @@ func TestGetImage(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "image/jpeg", w.Header().Get("Content-Type"))
+	assert.Equal(t, testImage, w.Body.Bytes(), "Response body should match the test image content")
+}
+
+func TestGetImageError(t *testing.T) {
+	// This test checks if the getImage handler returns an error when fetching the image fails.
+	// It uses a temporary directory for the image and simulates a fetch error.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	dir, err := os.MkdirTemp(os.TempDir(), "test_get_image_error_*")
+	assert.NoError(t, err, "Failed to create temporary directory for test")
+	defer os.RemoveAll(dir) // Clean up the temporary directory after the test
+
+	app := &App{
+		ImagePath: dir + "/image.jpg", // Use a temporary image path for testing
+		ImageUrl:  ts.URL,             // Use an invalid URL to simulate fetch error
+		MaxAge:    10 * time.Minute,   // Set a reasonable max age for the image
+	}
+	router := setupRouter(app) // Use the same router logic as in main.go
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/image.jpg", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
 // Test auxiliary functions for image handling
 
-func TestFetchImage(t *testing.T) {
+func TestFetchImageSuccess(t *testing.T) {
+	testImage := []byte("This is a test image content")
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.WriteHeader(http.StatusOK)
+		w.Write(testImage)
+	}))
+	defer ts.Close()
+
 	// This test assumes that the fetchImage function is implemented correctly
 	// and that it can be called without any side effects.
 
@@ -56,9 +112,108 @@ func TestFetchImage(t *testing.T) {
 	defer os.RemoveAll(dir) // Clean up the temporary directory after the test
 
 	imagePath := dir + "/image.jpg"
-	err = fetchImage(imagePath)
+	imageUrl := ts.URL
+
+	// Call the fetchImage function to fetch the image from the test server
+	// and save it to the temporary directory.
+	err = fetchImage(imagePath, imageUrl)
 	assert.NoError(t, err, "fetchImage should not return an error")
 	assert.FileExists(t, imagePath, "Image should be fetched and saved in cache directory")
+
+	// Verify the content of the fetched image
+	content, err := os.ReadFile(imagePath)
+	assert.NoError(t, err, "Failed to read fetched image file")
+	assert.Equal(t, testImage, content, "Fetched image content should match the test image content")
+}
+
+func TestFetchImageError(t *testing.T) {
+	// This test checks if the fetchImage function returns an error when the server
+	// doesn't respond correctly.
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer ts.Close()
+
+	dir, err := os.MkdirTemp(os.TempDir(), "test_fetch_image_error_*")
+	assert.NoError(t, err, "Failed to create temporary directory for test")
+	defer os.RemoveAll(dir) // Clean up the temporary directory after the test
+
+	imagePath := dir + "/image.jpg"
+	imageUrl := ts.URL // Use an invalid URL to simulate fetch error
+
+	err = fetchImage(imagePath, imageUrl)
+	assert.Error(t, err, "fetchImage should return an error for invalid URL")
+	assert.NoFileExists(t, imagePath, "Image file should not be created for invalid URL")
+}
+
+func TestFetchImageHttpGetError(t *testing.T) {
+	dir, err := os.MkdirTemp(os.TempDir(), "test_fetch_image_httpget_*")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	imagePath := dir + "/image.jpg"
+	invalidUrl := "http://invalid-url" // This should cause http.Get to fail
+
+	err = fetchImage(imagePath, invalidUrl)
+	assert.Error(t, err, "fetchImage should return error for invalid URL")
+	assert.NoFileExists(t, imagePath, "Image file should not be created for invalid URL")
+}
+
+func TestFetchImageSuccessWithBackoff(t *testing.T) {
+	// This test checks if the fetchImage function implements the backoff logic correctly.
+	// It simulates a server that returns an error for the first few requests and then succeeds.
+
+	testImage := []byte("This is a test image content")
+
+	attempts := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable) // Simulate a temporary failure
+			attempts++
+		} else {
+			w.Header().Set("Content-Type", "image/jpeg")
+			w.WriteHeader(http.StatusOK)
+			w.Write(testImage) // Return the test image content after a few attempts
+		}
+	}))
+	defer ts.Close()
+
+	dir, err := os.MkdirTemp(os.TempDir(), "test_fetch_image_backoff_*")
+	assert.NoError(t, err, "Failed to create temporary directory for test")
+	defer os.RemoveAll(dir) // Clean up the temporary directory after the test
+
+	imagePath := dir + "/image.jpg"
+	imageUrl := ts.URL
+
+	err = fetchImage(imagePath, imageUrl)
+	assert.NoError(t, err, "fetchImage should eventually succeed after retries")
+	assert.FileExists(t, imagePath, "Image should be fetched and saved in cache directory")
+
+	content, err := os.ReadFile(imagePath)
+	assert.NoError(t, err, "Failed to read fetched image file")
+	assert.Equal(t, testImage, content, "Fetched image content should match the expected content")
+}
+
+func TestFetchImageFailureAfterRetries(t *testing.T) {
+	// This test checks if the fetchImage function returns an error after exhausting all retry attempts.
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable) // Simulate a permanent failure
+	}))
+	defer ts.Close()
+
+	dir, err := os.MkdirTemp(os.TempDir(), "test_fetch_image_failure_*")
+	assert.NoError(t, err, "Failed to create temporary directory for test")
+	defer os.RemoveAll(dir) // Clean up the temporary directory after the test
+
+	imagePath := dir + "/image.jpg"
+	imageUrl := ts.URL
+
+	err = fetchImage(imagePath, imageUrl)
+	assert.Error(t, err, "fetchImage should return an error after all retry attempts")
+	assert.NoFileExists(t, imagePath, "Image file should not be created for permanent failure")
 }
 
 func TestIsImageFreshNewImage(t *testing.T) {

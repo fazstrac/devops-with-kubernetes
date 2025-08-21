@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,6 +20,8 @@ func main() {
 
 	app := &App{
 		ImagePath: "./cache/image.jpg",
+		ImageUrl:  "https://picsum.photos/1200",
+		MaxAge:    10 * time.Minute,
 	}
 
 	router := setupRouter(app)
