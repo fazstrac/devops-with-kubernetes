@@ -37,8 +37,8 @@ jobs:
         run: |
           cd ${{ matrix.app }}
           mkdir -p artifacts
-          export COVERAGE_FILE=artifacts/coverage-${{ matrix.app }}.out
           APP=$(echo -n dwk-${{ matrix.app }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          COVERAGE_FILE=artifacts/coverage-${APP}.out
           go test -coverprofile ${COVERAGE_FILE} ./...
       - name: Build application
         run: |
@@ -69,3 +69,13 @@ jobs:
         with:
           name: Artifacts-${{ matrix.app }}
           path: ${{ matrix.app }}/artifacts/
+      - name: Cleanup local images
+        run: |
+          set -e
+          cd ${{ matrix.app }}
+          APP=$(echo -n dwk-${{ matrix.app }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          COMMIT_TAG=$(echo -n dev-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          echo "Removing local images for application: $APP."
+          podman image rm ${{ vars.DEV_REGISTRY_URL }}/${APP}:latest || true
+          podman image rm ${{ vars.DEV_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} || true
+          podman image rm ${{ vars.DEV_REGISTRY_URL }}/${APP}:${COMMIT_TAG} || true
