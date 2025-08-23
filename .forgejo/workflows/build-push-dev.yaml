@@ -24,7 +24,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.24.4'
+          go-version: '1.24.6'
       - name: Install dependencies
         run: |
           cd ${{ matrix.app }}
@@ -36,7 +36,10 @@ jobs:
       - name: Run tests
         run: |
           cd ${{ matrix.app }}
-          go test ./...
+          mkdir -p artifacts
+          export COVERAGE_FILE=artifacts/coverage-${{ matrix.app }}.out
+          APP=$(echo -n dwk-${{ matrix.app }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          go test -coverprofile ${COVERAGE_FILE} ./...
       - name: Build application
         run: |
           set -e
@@ -61,3 +64,8 @@ jobs:
           podman push  ${{ vars.DEV_REGISTRY_URL }}/${APP}:latest && \
           podman push  ${{ vars.DEV_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} && \
           podman push  ${{ vars.DEV_REGISTRY_URL }}/${APP}:${COMMIT_TAG}
+      - name: Upload artifacts
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: Artifacts-${{ matrix.app }}
+          path: ${{ matrix.app }}/artifacts/

@@ -39,6 +39,11 @@ func (app *App) getImage(c *gin.Context) {
 			return
 		}
 	}
+
+	// Read the image file and serve it
+	// Note: this error handling can't be tested easily
+	// without refactoring the readImage function's os.ReadFile to be
+	// replaceable for testing purposes
 	imageData, err := readImage(app.ImagePath)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to read image: %v", err)
@@ -48,6 +53,10 @@ func (app *App) getImage(c *gin.Context) {
 	c.Writer.Header().Set("Cache-Control", "public, max-age=10") // Cache for 10 seconds
 	c.Writer.WriteHeader(http.StatusOK)
 	_, err = c.Writer.Write([]byte(imageData))
+
+	// Handle write error
+	// Note: This error handling is also hard to test without
+	// refactoring the c.Writer to be replaceable for testing purposes
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to write image: %v", err)
 		return
@@ -58,6 +67,11 @@ func (app *App) getImage(c *gin.Context) {
 //
 
 // Fetches an image from the url and saves it to the static folder
+// Does not account for HTTP 202 Accepted or 204 No Content
+// status codes, which might be used in some cases where the image
+// is not available yet or the server is still processing the request
+// It will retry fetching the image with a backoff strategy
+// if the server returns 500, 502, 503 or 504 status codes
 func fetchImage(fname string, url string) error {
 	waitTimes := []time.Duration{
 		// Fibonacci-like backoff times
@@ -74,10 +88,6 @@ func fetchImage(fname string, url string) error {
 		50 * time.Second,
 	}
 
-	// Try to fetch the image from the URL up to 3 times
-	// If the image is not available, return an error
-	// This is useful for cases where the image might not be available immediately
-	// or the URL might be temporarily down
 	// This will test against the following status codes:
 	// 200 OK,
 	// 502 Bad Gateway,
