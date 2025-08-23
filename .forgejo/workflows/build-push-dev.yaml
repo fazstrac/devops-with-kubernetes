@@ -45,7 +45,7 @@ jobs:
           set -e
           cd ${{ matrix.app }}
           APP=$(echo -n dwk-${{ matrix.app }} | sed 's/[^A-Za-z0-9]\+/-/g')
-          COMMIT_TAG=$(echo -n dev-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          COMMIT_TAG=$(echo -n dev-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9\.]\+/-/g')
           echo "Building application: $APP. SHA: ${{ env.FORGEJO_SHA }}. Tag: ${COMMIT_TAG}."
           podman build \
             --build-arg=COMMIT_SHA=${{ env.FORGEJO_SHA }} \
@@ -58,7 +58,7 @@ jobs:
           set -e
           cd ${{ matrix.app }}
           APP=$(echo -n dwk-${{ matrix.app }} | sed 's/[^A-Za-z0-9]\+/-/g')
-          COMMIT_TAG=$(echo -n dev-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          COMMIT_TAG=$(echo -n dev-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9\.]\+/-/g')
           echo "Pushing application: $APP."
           podman login ${{ vars.DEV_REGISTRY_URL }} --username ${{ vars.DEV_REGISTRY_USER }} --password ${{ secrets.DEV_REGISTRY_TOKEN }}
           podman push  ${{ vars.DEV_REGISTRY_URL }}/${APP}:latest && \
@@ -67,12 +67,11 @@ jobs:
       - name: Upload artifacts
         uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
-          name: artifacts
+          name: artifacts-${{ replace(matrix.app, '/', '-') }}.zip
           path: ${{ matrix.app }}/artifacts/
       - name: Cleanup local images
         run: |
           set -e
-          cd ${{ matrix.app }}
           APP=$(echo -n dwk-${{ matrix.app }} | sed 's/[^A-Za-z0-9]\+/-/g')
           COMMIT_TAG=$(echo -n dev-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9]\+/-/g')
           echo "Removing local images for application: $APP."
