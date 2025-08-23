@@ -67,7 +67,7 @@ jobs:
       - name: Upload artifacts
         uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
-          name: Artifacts-${{ matrix.app }}
+          name: artifacts
           path: ${{ matrix.app }}/artifacts/
       - name: Cleanup local images
         run: |
