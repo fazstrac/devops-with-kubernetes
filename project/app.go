@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,10 +16,24 @@ var (
 	COMMIT_TAG string
 )
 
+type ImageState int
+
+const (
+	ImageStateNotFetched ImageState = iota
+	ImageStateFresh
+	ImageStateStale
+	ImageStateExpired
+)
+
 type App struct {
-	ImagePath string
-	ImageUrl  string
-	MaxAge    time.Duration
+	ImagePath         string
+	ImageUrl          string
+	ImageFetchedAt    time.Time
+	ImageLastServedAt time.Time
+	IsGracePeriodUsed bool
+	GracePeriod       time.Duration
+	MaxAge            time.Duration
+	mu                sync.RWMutex // Mutex to protect shared resources
 }
 
 func (app *App) getIndex(c *gin.Context) {
@@ -30,21 +45,69 @@ func (app *App) getIndex(c *gin.Context) {
 
 func (app *App) getImage(c *gin.Context) {
 	// Check if the image is fresh, if not, fetch it
+	app.mu.Lock()
+	app.ImageLastServedAt = time.Now()
+	app.mu.Unlock()
 
-	isFresh := isImageFresh(app.ImagePath, app.MaxAge)
-	if !isFresh {
-		err := fetchImage(app.ImagePath, app.ImageUrl)
-		if err != nil {
-			c.String(http.StatusInternalServerError, "Failed to fetch image: %v", err)
-			return
-		}
+	app.mu.RLock()
+	state := app.getImageStateUnlocked()
+	graceUsed := app.IsGracePeriodUsed
+	app.mu.RUnlock()
+
+	switch {
+	case state == ImageStateNotFetched, state == ImageStateExpired:
+		func() {
+			// Image is not fetched or expired, fetch it
+
+			// Use a write lock to ensure only one thread fetches the image
+			// while others wait. This prevents multiple threads from fetching the
+			// image simultaneously and causing a thundering herd problem
+
+			// Reset the grace period flag just in case
+			app.mu.Lock()
+			defer app.mu.Unlock()
+			app.IsGracePeriodUsed = false
+
+			// Re-check the state in case it changed while waiting for the lock
+			state = app.getImageStateUnlocked()
+
+			if state == ImageStateNotFetched || state == ImageStateExpired {
+				err := fetchImageUnlocked(app.ImagePath, app.ImageUrl)
+				if err != nil {
+					c.String(http.StatusInternalServerError, "Failed to fetch image: %v", err)
+					return
+				}
+				app.ImageFetchedAt = time.Now()
+			}
+			// Else, another thread has already fetched the image
+			// and we can proceed to serve it
+		}()
+	case state == ImageStateStale && !graceUsed:
+		// Image is stale but within grace period, serve it and mark grace period used
+		app.mu.Lock()
+		app.IsGracePeriodUsed = true
+		app.ImageLastServedAt = time.Now()
+		app.mu.Unlock()
+	case state == ImageStateFresh:
+		// Image is fresh, serve it and reset grace period flag just in case
+		app.mu.Lock()
+		app.IsGracePeriodUsed = false
+		app.ImageLastServedAt = time.Now()
+		app.mu.Unlock()
+	default:
+		c.String(http.StatusInternalServerError, "Unknown image state")
+		return
 	}
+
+	// At this point, the image should be available
 
 	// Read the image file and serve it
 	// Note: this error handling can't be tested easily
 	// without refactoring the readImage function's os.ReadFile to be
 	// replaceable for testing purposes
-	imageData, err := readImage(app.ImagePath)
+
+	// Should be safe to read the image without a lock
+	imageData, err := readImageUnlocked(app.ImagePath)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to read image: %v", err)
 		return
@@ -54,7 +117,7 @@ func (app *App) getImage(c *gin.Context) {
 	c.Writer.WriteHeader(http.StatusOK)
 	_, err = c.Writer.Write([]byte(imageData))
 
-	// Handle write error
+	// Handle write error from c.Writer.Write
 	// Note: This error handling is also hard to test without
 	// refactoring the c.Writer to be replaceable for testing purposes
 	if err != nil {
@@ -66,13 +129,27 @@ func (app *App) getImage(c *gin.Context) {
 // Auxiliary functions
 //
 
+func (app *App) getImageStateUnlocked() ImageState {
+	if app.ImageFetchedAt.IsZero() {
+		return ImageStateNotFetched
+	}
+
+	age := time.Since(app.ImageFetchedAt)
+
+	if age < app.MaxAge {
+		return ImageStateFresh
+	} else if age < app.MaxAge+app.GracePeriod { // grant 10 seconds of grace period
+		return ImageStateStale
+	} else {
+		return ImageStateExpired
+	}
+}
+
 // Fetches an image from the url and saves it to the static folder
-// Does not account for HTTP 202 Accepted or 204 No Content
-// status codes, which might be used in some cases where the image
-// is not available yet or the server is still processing the request
-// It will retry fetching the image with a backoff strategy
-// if the server returns 500, 502, 503 or 504 status codes
-func fetchImage(fname string, url string) error {
+// It retries on certain HTTP errors with backoff
+//
+//	*** caller must ensure proper locking if needed ***
+func fetchImageUnlocked(fname string, url string) error {
 	waitTimes := []time.Duration{
 		// Fibonacci-like backoff times
 		// in total, this will wait for 128 seconds
@@ -89,58 +166,72 @@ func fetchImage(fname string, url string) error {
 	}
 
 	// This will test against the following status codes:
-	// 200 OK,
-	// 502 Bad Gateway,
-	// 503 Service Unavailable,
-	// 504 Gateway Timeout
-	// If the image is not available, return an error
+	// 200 OK --> save the image and return,
 	//
-	// It is missing logic to handle codes like 202 Accepted or 204 No Content
-	// which might be used in some cases where the image is not available yet
-	// or the server is still processing the request
+	// 500 Internal Server Error --> sleep and retry,
+	// 502 Bad Gateway --> sleep and retry,
+	// 503 Service Unavailable --> sleep and retry,
+	// 504 Gateway Timeout --> sleep and retry,
+	//
+	// Other status codes --> return an error
 	for _, wait := range waitTimes {
 		resp, err := http.Get(url)
 		if err != nil {
 			return err
 		}
 
-		if resp.StatusCode == http.StatusOK {
-			defer resp.Body.Close()
-			out, err := os.Create(fname)
-			if err != nil {
-				return err
-			}
-			defer out.Close()
-
-			_, err = io.Copy(out, resp.Body)
-			return err
-		} else if resp.StatusCode != http.StatusInternalServerError &&
-			resp.StatusCode != http.StatusBadGateway &&
-			resp.StatusCode != http.StatusServiceUnavailable &&
-			resp.StatusCode != http.StatusGatewayTimeout {
-
-			resp.Body.Close()          // Close the response body to avoid resource leaks
+		switch resp.StatusCode {
+		case http.StatusOK:
+			// Image fetched successfully, save it
+			return saveImageUnlocked(fname, resp)
+		case http.StatusInternalServerError,
+			http.StatusBadGateway,
+			http.StatusServiceUnavailable,
+			http.StatusGatewayTimeout:
+			resp.Body.Close() // Close the response body to avoid resource leaks
+			// Sleep for a while before retrying
+			time.Sleep(wait)
+		default:
 			return http.ErrMissingFile // Return an error if the image is not found
 		}
-
-		// Sleep for a while before retrying
-		time.Sleep(wait)
-		resp.Body.Close()
 	}
-
-	return http.ErrMissingFile // Return an error if the image could not be fetched
+	return http.ErrHandlerTimeout // Return an error if all retries are exhausted
 }
 
-func isImageFresh(fname string, max_age time.Duration) bool {
-	// Check if the image file exists and is not older than 24 hours
-	info, err := os.Stat(fname)
+// saveImageUnlocked saves the image from the HTTP response to the given path
+// It saves the image to a temporary file first and then moves it to the final location
+// to avoid partial writes
+//
+// *** caller must ensure proper locking if needed ***
+func saveImageUnlocked(imagePath string, resp *http.Response) error {
+	dir, err := os.MkdirTemp(os.TempDir(), "dwk-project*")
 	if err != nil {
-		return false
+		return err
 	}
-	return info.ModTime().Add(max_age).After(time.Now())
+
+	defer os.RemoveAll(dir) // Clean up the temporary directory after the test
+	fname := dir + "/image.jpg"
+
+	// Create the temporary file
+	out, err := os.Create(fname)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	// Write the body to file
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return err
+	}
+
+	// Move the temp file to the final location
+	return os.Rename(fname, imagePath)
 }
 
-func readImage(fname string) (string, error) {
+// readImageUnlocked reads the image file without locking
+// caller must ensure proper locking if needed
+func readImageUnlocked(fname string) (string, error) {
 	// Read the image file and return its content
 	data, err := os.ReadFile(fname)
 	if err != nil {

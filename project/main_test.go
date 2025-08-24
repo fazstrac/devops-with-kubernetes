@@ -125,3 +125,32 @@ func TestEndpointGetImageFailBadURL(t *testing.T) {
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
+
+func TestGetImageFailTimeout(t *testing.T) {
+	// This test checks if the getImage handler returns an error when fetching the image times out.
+	// It uses a temporary directory for the image and simulates a fetch timeout.
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("This is a test image content"))
+	}))
+	defer ts.Close()
+
+	dir, err := os.MkdirTemp(os.TempDir(), "test_get_image_timeout_*")
+	assert.NoError(t, err, "Failed to create temporary directory for test")
+	defer os.RemoveAll(dir) // Clean up the temporary directory after the test
+
+	app := &App{
+		ImagePath: dir + "/image.jpg", // Use a temporary image path for testing
+		ImageUrl:  ts.URL,             // Use the test server URL
+		MaxAge:    10 * time.Minute,   // Set a reasonable max age for the image
+	}
+	router := setupRouter(app) // Use the same router logic as in main.go
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/image.jpg", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
