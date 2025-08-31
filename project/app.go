@@ -136,8 +136,6 @@ func (app *App) GetImage(c *gin.Context) {
 	}
 }
 
-}
-
 // Auxiliary functions
 //
 

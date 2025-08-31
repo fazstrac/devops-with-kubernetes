@@ -27,11 +27,12 @@ func main() {
 		30*time.Second,               // Timeout for fetching the image from the backend
 	)
 
+	app.LoadCachedImage()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	go app.StartImageFetcher(ctx)
 	defer cancel()
 
-	app.LoadCachedImage()
 	router := setupRouter(app)
 
 	fmt.Println("Server started in port", os.Getenv("PORT"))
