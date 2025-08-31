@@ -33,7 +33,18 @@ type App struct {
 	IsGracePeriodUsed bool
 	GracePeriod       time.Duration
 	MaxAge            time.Duration
+	IsFetchingImage   bool
+	fetchDoneChan     chan struct{}
 	mu                sync.RWMutex // Mutex to protect shared resources
+}
+
+func NewApp(imagePath, imageUrl string, maxAge, gracePeriod time.Duration) *App {
+	return &App{
+		ImagePath:   imagePath,
+		ImageUrl:    imageUrl,
+		MaxAge:      maxAge,
+		GracePeriod: gracePeriod,
+	}
 }
 
 func (app *App) getIndex(c *gin.Context) {
@@ -56,32 +67,44 @@ func (app *App) getImage(c *gin.Context) {
 
 	switch {
 	case state == ImageStateNotFetched, state == ImageStateExpired:
-		func() {
-			// Image is not fetched or expired, fetch it
+		app.mu.Lock()
+		if !app.IsFetchingImage {
+			app.IsFetchingImage = true
+			app.fetchDoneChan = make(chan struct{}) // Create a new channel for this fetch operation
+			app.mu.Unlock()                         // Unlock before fetching the image
 
-			// Use a write lock to ensure only one thread fetches the image
-			// while others wait. This prevents multiple threads from fetching the
-			// image simultaneously and causing a thundering herd problem
+			err := fetchImageUnlocked(app.ImagePath, app.ImageUrl)
 
-			// Reset the grace period flag just in case
 			app.mu.Lock()
-			defer app.mu.Unlock()
-			app.IsGracePeriodUsed = false
+			app.ImageFetchedAt = time.Now()
+			app.IsFetchingImage = false
+			close(app.fetchDoneChan) // Signal that fetching is done
+			app.mu.Unlock()
 
-			// Re-check the state in case it changed while waiting for the lock
-			state = app.getImageStateUnlocked()
-
-			if state == ImageStateNotFetched || state == ImageStateExpired {
-				err := fetchImageUnlocked(app.ImagePath, app.ImageUrl)
-				if err != nil {
-					c.String(http.StatusInternalServerError, "Failed to fetch image: %v", err)
-					return
-				}
-				app.ImageFetchedAt = time.Now()
+			if err != nil {
+				c.String(http.StatusInternalServerError, "Failed to fetch image: %v", err)
+				return
 			}
-			// Else, another thread has already fetched the image
-			// and we can proceed to serve it
-		}()
+		} else {
+			// Another thread is already fetching the image, wait for it to complete
+			ch := app.fetchDoneChan
+			app.mu.Unlock() // Unlock while waiting
+
+			select {
+			case <-ch:
+				// Fetching is done, proceed to serve the image
+				// It is possible that the fetch failed, so we will re-check the state below
+			case <-time.After(30 * time.Second):
+				// Timeout waiting for the fetch to complete
+				c.String(http.StatusServiceUnavailable, "Image is being fetched, please try again later")
+				return
+			}
+		}
+		// At this point, the image should be fetched, re-check the state
+		app.mu.RLock()
+		state = app.getImageStateUnlocked()
+		app.mu.RUnlock()
+
 	case state == ImageStateStale && !graceUsed:
 		// Image is stale but within grace period, serve it and mark grace period used
 		app.mu.Lock()

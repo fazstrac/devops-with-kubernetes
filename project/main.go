@@ -18,11 +18,7 @@ func main() {
 		os.Setenv("PORT", port)
 	}
 
-	app := &App{
-		ImagePath: "./cache/image.jpg",
-		ImageUrl:  "https://picsum.photos/1200",
-		MaxAge:    10 * time.Minute,
-	}
+	app := NewApp("./cache/image.jpg", "https://picsum.photos/1200", 10*time.Minute, 1*time.Minute)
 
 	router := setupRouter(app)
 	fmt.Println("Server started in port", os.Getenv("PORT"))
