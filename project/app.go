@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"os"
@@ -11,18 +12,8 @@ import (
 )
 
 var (
-	// COMMIT_ID is the commit ID of the code
 	COMMIT_SHA string
 	COMMIT_TAG string
-)
-
-type ImageState int
-
-const (
-	ImageStateNotFetched ImageState = iota
-	ImageStateFresh
-	ImageStateStale
-	ImageStateExpired
 )
 
 type App struct {
@@ -49,126 +40,106 @@ func NewApp(imagePath, imageUrl string, maxAge, gracePeriod time.Duration, fetch
 	}
 }
 
-func (app *App) getIndex(c *gin.Context) {
+// Starts a background goroutine to fetch the image periodically
+// It uses a ticker to trigger the fetch operation based on MaxAge
+// If a fetch is already in progress, it skips the operation
+// Missing error handling for timeout and other issues
+func (app *App) StartImageFetcher(ctx context.Context) {
+	ticker := time.NewTicker(app.MaxAge)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			app.mutex.Lock()
+			// Only fetch if not already fetching
+			if !app.IsFetchingImage {
+				app.IsFetchingImage = true
+				app.fetchDoneChan = make(chan struct{}) // Create a new channel for this fetch operation
+				app.mutex.Unlock()                      // Unlock before fetching the image
+
+				err := fetchImageUnlocked(app.ImagePath, app.ImageUrl)
+
+				app.mutex.Lock()
+				app.ImageFetchedAt = time.Now()
+				app.IsFetchingImage = false
+				close(app.fetchDoneChan) // Signal that fetching is done
+				app.mutex.Unlock()
+
+				if err != nil {
+					// Log the error, but do not terminate the fetcher
+					// In real application, use a proper logging framework
+					// Here we just print to stdout for simplicity
+					println("Failed to fetch image:", err.Error())
+				}
+			} else {
+				app.mutex.Unlock() // Already fetching, just unlock
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// Initializes the app by loading the cached image if it exists
+func (app *App) LoadCachedImage() error {
+	app.mutex.Lock()
+	defer app.mutex.Unlock()
+
+	info, err := os.Stat(app.ImagePath)
+	if err != nil {
+		return err
+	}
+
+	app.ImageFetchedAt = info.ModTime()
+	app.IsGracePeriodUsed = false
+	return nil
+}
+
+func (app *App) GetIndex(c *gin.Context) {
 	c.HTML(http.StatusOK, "index.html", gin.H{
 		"title": "DevOps with Kubernetes - Chapter 2 - Exercise 1.12",
 		"body":  COMMIT_SHA + " (" + COMMIT_TAG + ")",
 	})
 }
 
-func (app *App) getImage(c *gin.Context) {
-	// Check if the image is fresh, if not, fetch it
+func (app *App) GetImage(c *gin.Context) {
 	app.mutex.Lock()
-	app.ImageLastServedAt = time.Now()
-	app.mutex.Unlock()
+	defer app.mutex.Unlock()
 
-	app.mutex.RLock()
-	state := app.getImageStateUnlocked()
-	graceUsed := app.IsGracePeriodUsed
-	app.mutex.RUnlock()
+	age := time.Since(app.ImageFetchedAt)
 
-	switch {
-	case state == ImageStateNotFetched, state == ImageStateExpired:
-		app.mutex.Lock()
-		if !app.IsFetchingImage {
-			app.IsFetchingImage = true
-			app.fetchDoneChan = make(chan struct{}) // Create a new channel for this fetch operation
-			app.mutex.Unlock()                      // Unlock before fetching the image
-
-			err := fetchImageUnlocked(app.ImagePath, app.ImageUrl)
-
-			app.mutex.Lock()
-			app.ImageFetchedAt = time.Now()
-			app.IsFetchingImage = false
-			close(app.fetchDoneChan) // Signal that fetching is done
-			app.mutex.Unlock()
-
-			if err != nil {
-				c.String(http.StatusInternalServerError, "Failed to fetch image: %v", err)
-				return
-			}
-		} else {
-			// Another thread is already fetching the image, wait for it to complete
-			ch := app.fetchDoneChan
-			app.mutex.Unlock() // Unlock while waiting
-
-			select {
-			case <-ch:
-				// Fetching is done, proceed to serve the image
-				// It is possible that the fetch failed, so we will re-check the state below
-			case <-time.After(app.FetchImageTimeout):
-				// Timeout waiting for the fetch to complete
-				c.String(http.StatusServiceUnavailable, "Image is being fetched, please try again later")
-				return
-			}
-		}
-		// At this point, the image should be fetched, re-check the state
-		// app.mutex.RLock()
-		// state = app.getImageStateUnlocked()
-		// app.mutex.RUnlock()
-
-	case state == ImageStateStale && !graceUsed:
-		// Image is stale but within grace period, serve it and mark grace period used
-		app.mutex.Lock()
-		app.IsGracePeriodUsed = true
-		app.ImageLastServedAt = time.Now()
-		app.mutex.Unlock()
-	case state == ImageStateFresh:
-		// Image is fresh, serve it and reset grace period flag just in case
-		app.mutex.Lock()
-		app.IsGracePeriodUsed = false
-		app.ImageLastServedAt = time.Now()
-		app.mutex.Unlock()
-	default:
-		c.String(http.StatusInternalServerError, "Unknown image state")
+	if age > app.MaxAge+app.GracePeriod {
+		c.Writer.Header().Set("Retry-After", "10")
+		c.String(http.StatusServiceUnavailable, "Image is being fetched, please try again later")
 		return
 	}
 
-	// At this point, the image should be available
+	if age > app.MaxAge && !app.IsGracePeriodUsed {
+		app.IsGracePeriodUsed = true
+	} else if age <= app.MaxAge {
+		app.IsGracePeriodUsed = false
+	}
 
-	// Read the image file and serve it
-	// Note: this error handling can't be tested easily
-	// without refactoring the readImage function's os.ReadFile to be
-	// replaceable for testing purposes
-
-	// Should be safe to read the image without a lock
 	imageData, err := readImageUnlocked(app.ImagePath)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to read image: %v", err)
 		return
 	}
+
 	c.Writer.Header().Set("Content-Type", "image/jpeg")
-	c.Writer.Header().Set("Cache-Control", "public, max-age=10") // Cache for 10 seconds
+	c.Writer.Header().Set("Cache-Control", "public, max-age=10")
 	c.Writer.WriteHeader(http.StatusOK)
 	_, err = c.Writer.Write([]byte(imageData))
-
-	// Handle write error from c.Writer.Write
-	// Note: This error handling is also hard to test without
-	// refactoring the c.Writer to be replaceable for testing purposes
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to write image: %v", err)
-		return
 	}
+}
+
 }
 
 // Auxiliary functions
 //
-
-func (app *App) getImageStateUnlocked() ImageState {
-	if app.ImageFetchedAt.IsZero() {
-		return ImageStateNotFetched
-	}
-
-	age := time.Since(app.ImageFetchedAt)
-
-	if age < app.MaxAge {
-		return ImageStateFresh
-	} else if age < app.MaxAge+app.GracePeriod { // grant 10 seconds of grace period
-		return ImageStateStale
-	} else {
-		return ImageStateExpired
-	}
-}
 
 // Fetches an image from the url and saves it to the static folder
 // It retries on certain HTTP errors with backoff
@@ -229,6 +200,8 @@ func fetchImageUnlocked(fname string, url string) error {
 //
 // *** caller must ensure proper locking if needed ***
 func saveImageUnlocked(imagePath string, resp *http.Response) error {
+	// Create a temporary file to save the image
+	//
 	dir, err := os.MkdirTemp(os.TempDir(), "dwk-project*")
 	if err != nil {
 		return err
@@ -250,7 +223,10 @@ func saveImageUnlocked(imagePath string, resp *http.Response) error {
 		return err
 	}
 
-	// Move the temp file to the final location
+	// Finally move the temp file to the final location
+	// This is atomic on most operating systems
+	// and ensures that we don't end up with a partial file
+	// if the program crashes or is interrupted during the write
 	return os.Rename(fname, imagePath)
 }
 

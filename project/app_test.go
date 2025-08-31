@@ -26,7 +26,7 @@ func TestGetIndexSuccess(t *testing.T) {
 	c, eng := gin.CreateTestContext(w)
 	eng.LoadHTMLGlob("templates/*")
 	assert.NotNil(t, c)
-	app.getIndex(c)
+	app.GetIndex(c)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 }
@@ -57,7 +57,7 @@ func TestGetImageSuccess(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	app.getImage(c)
+	app.GetImage(c)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "image/jpeg", w.Header().Get("Content-Type"))
