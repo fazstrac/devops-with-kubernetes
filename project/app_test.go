@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,11 +14,13 @@ import (
 // Test endpoints for the application
 
 func TestGetIndexSuccess(t *testing.T) {
-	app := &App{
-		ImagePath: "./cache/image.jpg",
-		ImageUrl:  "https://picsum.photos/1200",
-		MaxAge:    10 * time.Minute,
-	}
+	app := NewApp(
+		"./cache/image.jpg",
+		"https://picsum.photos/1200",
+		10*time.Minute,
+		1*time.Minute,
+		30*time.Second,
+	)
 
 	w := httptest.NewRecorder()
 	c, eng := gin.CreateTestContext(w)
@@ -46,13 +47,13 @@ func TestGetImageSuccess(t *testing.T) {
 	assert.NoError(t, err, "Failed to create temporary directory for test")
 	defer os.RemoveAll(dir) // Clean up the temporary directory after the test
 
-	app := &App{
-		ImagePath: dir + "/image.jpg", // Use a temporary image path for testing
-		ImageUrl:  ts.URL,             // Use the test server URL
-		MaxAge:    10 * time.Minute,   // Set a reasonable max age for the image
-	}
-
-	fmt.Println("Image URL:", app.ImageUrl) // Debugging output to verify the URL
+	app := NewApp(
+		dir+"/image.jpg", // Use a temporary image path for testing
+		ts.URL,           // Use the test server URL
+		10*time.Minute,   // Set a reasonable max age for the image
+		1*time.Minute,    // Grace period during which the old image can be fetched _once_
+		30*time.Second,   // Timeout for fetching the image from the backend
+	)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -75,9 +76,6 @@ func TestFetchImageSuccess(t *testing.T) {
 		w.Write(testImage)
 	}))
 	defer ts.Close()
-
-	// This test assumes that the fetchImage function is implemented correctly
-	// and that it can be called without any side effects.
 
 	dir, err := os.MkdirTemp(os.TempDir(), "test_fetch_image_*")
 	assert.NoError(t, err, "Failed to create temporary directory for test")

@@ -18,7 +18,13 @@ func main() {
 		os.Setenv("PORT", port)
 	}
 
-	app := NewApp("./cache/image.jpg", "https://picsum.photos/1200", 10*time.Minute, 1*time.Minute)
+	app := NewApp(
+		"./cache/image.jpg",          // Path to store the cached image
+		"https://picsum.photos/1200", // Backend image URL
+		10*time.Minute,               // Max age for the image
+		1*time.Minute,                // Grace period during which the old image can be fetched _once_
+		30*time.Second,               // Timeout for fetching the image from the backend
+	)
 
 	router := setupRouter(app)
 	fmt.Println("Server started in port", os.Getenv("PORT"))
@@ -30,7 +36,7 @@ func setupRouter(app *App) *gin.Engine {
 	router.LoadHTMLGlob("templates/*")
 
 	router.GET("/", app.getIndex)
-	router.GET("/image.jpg", app.getImage)
+	router.GET("/images/image.jpg", app.getImage)
 	// Add more routes here, using app methods
 	return router
 }
