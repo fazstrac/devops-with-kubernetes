@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -57,6 +58,12 @@ type App struct {
 	Fetcher           ImageFetcher
 	fetchDoneChan     chan struct{}
 	mutex             sync.RWMutex // Mutex to protect shared resources
+}
+
+type fetchError struct {
+	HTTPStatus int
+	RetryAfter time.Time
+	err        error
 }
 
 func NewApp(imagePath, imageUrl string, maxAge, gracePeriod time.Duration, fetchTimeout time.Duration) *App {
@@ -162,9 +169,8 @@ func (app *App) GetImage(c *gin.Context) {
 //
 
 // Starts a background goroutine to fetch the image periodically
-// It uses a ticker to trigger the fetch operation based on MaxAge
-// If a fetch is already in progress, it skips the operation
-// Missing error handling for timeout and other issues
+// It tries to fetch the image immediately with a timeout,
+// then it starts a
 func StartBackgroundImageFetcher(ctx context.Context, app *App) {
 	ticker := time.NewTicker(app.MaxAge)
 	defer ticker.Stop()
@@ -181,7 +187,7 @@ func StartBackgroundImageFetcher(ctx context.Context, app *App) {
 		// Unlock before fetching the image
 		app.mutex.Unlock()
 
-		err := fetchImage(app.ImagePath, app.ImageUrl)
+		res := fetchImageWithTimeout(app.ImagePath, app.ImageUrl, 30*time.Second)
 
 		// Lock again to update the state
 		app.mutex.Lock()
@@ -190,11 +196,11 @@ func StartBackgroundImageFetcher(ctx context.Context, app *App) {
 		close(app.fetchDoneChan) // Signal that fetching is done
 		app.mutex.Unlock()
 
-		if err != nil {
+		if res.err != nil {
 			// Log the error, but do not terminate the fetcher
 			// In real application, use a proper logging framework
 			// Here we just print to stdout for simplicity
-			println("Failed to fetch image:", err.Error())
+			println("Failed to fetch image:", res.err.Error())
 		}
 	} else {
 		app.mutex.Unlock() // Already fetching, just unlock
@@ -220,11 +226,11 @@ func StartBackgroundImageFetcher(ctx context.Context, app *App) {
 				close(app.fetchDoneChan) // Signal that fetching is done
 				app.mutex.Unlock()
 
-				if err != nil {
+				if err.err != nil {
 					// Log the error, but do not terminate the fetcher
 					// In real application, use a proper logging framework
 					// Here we just print to stdout for simplicity
-					println("Failed to fetch image:", err.Error())
+					println("Failed to fetch image:", err.err.Error())
 				}
 			} else {
 				app.mutex.Unlock() // Already fetching, just unlock
@@ -235,42 +241,65 @@ func StartBackgroundImageFetcher(ctx context.Context, app *App) {
 	}
 }
 
-// Fetches an image from the url and saves it to the static folder
-// It retries on certain HTTP errors with backoff
-//
-//	*** caller must ensure proper locking if needed ***
-func fetchImage(fname string, url string) error {
+func fetchImageWithTimeout(fname string, url string, timeout time.Duration) fetchError {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	doneChan := make(chan fetchError)
+
+	go func() {
+		err := fetchImage(fname, url)
+		doneChan <- err
+	}()
+
+	select {
+	case <-ctx.Done():
+		return fetchError{666, ctx.Err()} // Return invalid HTTP status and timeout error
+	case err := <-doneChan:
+		return err // Return the result of fetchImage
+	}
+}
+
+// Fetches an image from the url and saves it as the fname
+func fetchImage(fname string, url string) fetchError {
 	// This will test against the following status codes:
 	// 200 OK --> save the image and return,
-	//
-	// 500 Internal Server Error --> sleep and retry,
-	// 502 Bad Gateway --> sleep and retry,
-	// 503 Service Unavailable --> sleep and retry,
-	// 504 Gateway Timeout --> sleep and retry,
-	//
-	// Other status codes --> return an error
-	for _, wait := range waitTimes {
-		resp, err := http.Get(url)
-		if err != nil {
-			return err
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return fetchError{resp.StatusCode, -1, err}
+	}
+	defer resp.Body.Close()
+
+	var wait time.Time
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		wait = time.Now()
+	case http.StatusTooManyRequests, http.StatusServiceUnavailable:
+		retryAfter := resp.Header.Get("Retry-After")
+
+		if retryAfter != "" {
+			if seconds, err := strconv.Atoi(retryAfter); err == nil {
+				// Retry after this many seconds
+				wait = time.Now().Add(time.Duration(seconds) * time.Second)
+			} else if t, err := http.ParseTime(retryAfter); err == nil {
+				// Retry after this time
+				wait = t
+			} else {
+				// Default to 5 seconds
+				wait = time.Now().Add(5 * time.Second)
+			}
 		}
 
-		switch resp.StatusCode {
-		case http.StatusOK:
-			// Image fetched successfully, save it
-			return SaveImageFunc(fname, resp)
-		case http.StatusInternalServerError,
-			http.StatusBadGateway,
-			http.StatusServiceUnavailable,
-			http.StatusGatewayTimeout:
-			resp.Body.Close() // Close the response body to avoid resource leaks
-			// Sleep for a while before retrying
-			time.Sleep(wait)
-		default:
-			return http.ErrMissingFile // Return an error if the image is not found
-		}
 	}
-	return http.ErrHandlerTimeout // Return an error if all retries are exhausted
+
+	if resp.StatusCode == http.StatusOK {
+		// Image fetched successfully, save it
+		return fetchError{resp.StatusCode, wait, SaveImageFunc(fname, resp)}
+	} else {
+		return fetchError{resp.StatusCode, wait, http.ErrMissingFile}
+	}
 }
 
 // saveImage saves the image from the HTTP response to the given path
