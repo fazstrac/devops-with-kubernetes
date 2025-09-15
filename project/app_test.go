@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -383,27 +384,55 @@ func TestFetchImageCases(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name: "success after retries",
+			name: "fail retry-later 1",
 			setupMocks: func(m *MockSaveImage) {
-				m.On("SaveImage", imagePath, mock.Anything).Return(nil)
+				// No calls expected
 			},
 			setupServer: func() (ts *httptest.Server) {
-				attempts := 0
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					if attempts < 3 {
-						w.WriteHeader(http.StatusServiceUnavailable) // Simulate a temporary failure
-						attempts++
-					} else {
-						w.Header().Set("Content-Type", "image/jpeg")
-						w.WriteHeader(http.StatusOK)
-						w.Write(testImage) // Return the test image content after a few attempts
-					}
+					gmt := time.FixedZone("GMT", 0)
+
+					w.Header().Set("Retry-After", time.Now().Add(25*time.Second).In(gmt).Format(time.RFC1123))
+					w.WriteHeader(http.StatusServiceUnavailable) // Simulate a temporary failure
 				}))
 			},
 			assertions: func(t *testing.T, m *MockSaveImage) {
-				m.AssertNumberOfCalls(t, "SaveImage", 1)
+				// No calls expected
 			},
-			expectErr: false,
+			expectErr: true,
+		},
+		{
+			name: "fail retry-later 2",
+			setupMocks: func(m *MockSaveImage) {
+				// No calls expected
+			},
+			setupServer: func() (ts *httptest.Server) {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Retry-After", "120")
+					w.WriteHeader(http.StatusServiceUnavailable) // Simulate a temporary failure
+				}))
+			},
+			assertions: func(t *testing.T, m *MockSaveImage) {
+				// No calls expected
+			},
+			expectErr: true,
+		},
+		{
+			name: "fail retry-later 3",
+			setupMocks: func(m *MockSaveImage) {
+				// No calls expected
+			},
+			setupServer: func() (ts *httptest.Server) {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// Format the date deliberately wrong
+					w.Header().Set("Retry-After", time.Now().Add(5*time.Second).Format(time.RFC1123))
+					w.WriteHeader(http.StatusServiceUnavailable) // Simulate a temporary failure
+				}))
+			},
+			assertions: func(t *testing.T, m *MockSaveImage) {
+				// No calls expected
+			},
+			expectErr: true,
 		},
 		{
 			name: "fail with bad url",
@@ -414,7 +443,7 @@ func TestFetchImageCases(t *testing.T) {
 				return nil // No server needed for invalid URL
 			},
 			assertions: func(t *testing.T, m *MockSaveImage) {
-				m.AssertNumberOfCalls(t, "SaveImage", 0)
+				// No calls expected
 			},
 			expectErr: true,
 		},
@@ -430,22 +459,7 @@ func TestFetchImageCases(t *testing.T) {
 				}))
 			},
 			assertions: func(t *testing.T, m *MockSaveImage) {
-				m.AssertNumberOfCalls(t, "SaveImage", 0)
-			},
-			expectErr: true,
-		},
-		{
-			name: "fail after retries",
-			setupMocks: func(m *MockSaveImage) {
 				// No calls expected
-			},
-			setupServer: func() (ts *httptest.Server) {
-				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusServiceUnavailable) // Simulate a permanent failure
-				}))
-			},
-			assertions: func(t *testing.T, m *MockSaveImage) {
-				m.AssertNumberOfCalls(t, "SaveImage", 0)
 			},
 			expectErr: true,
 		},
@@ -493,11 +507,113 @@ func TestFetchImageCases(t *testing.T) {
 				imageUrl = "http://invalid-url"
 			}
 
-			err := fetchImage(imagePath, imageUrl)
+			res := fetchImage(imagePath, imageUrl)
+
+			switch tc.name {
+			case "fail retry-later 1":
+				assert.WithinDuration(t, time.Now().Add(25*time.Second), res.RetryAfter, 1*time.Second)
+			case "fail retry-later 2":
+				assert.WithinDuration(t, time.Now().Add(120*time.Second), res.RetryAfter, 1*time.Second)
+			case "fail retry-later 3":
+				assert.WithinDuration(t, time.Now().Add(5*time.Second), res.RetryAfter, 1*time.Second)
+			case "fail with bad url", "fail bad response", "fail save image", "success":
+				assert.True(t, res.RetryAfter.IsZero())
+			}
+
 			if tc.expectErr {
-				assert.Error(t, err, "fetchImage should return an error")
+				assert.Error(t, res.err, "fetchImage should return an error")
 			} else {
-				assert.NoError(t, err, "fetchImage should not return an error")
+				assert.NoError(t, res.err, "fetchImage should not return an error")
+			}
+
+			tc.assertions(t, mockSave)
+			mockSave.AssertExpectations(t)
+		})
+	}
+}
+
+func TestFetchImageWithTimeoutCases(t *testing.T) {
+	testImage := []byte("Test image contents")
+	imagePath := "mockimage.jpg"
+
+	type testCase struct {
+		name        string
+		setupMocks  func(m *MockSaveImage)
+		setupServer func() (ts *httptest.Server)
+		expectErr   bool
+		assertions  func(t *testing.T, m *MockSaveImage)
+	}
+
+	cases := []testCase{
+		{
+			name: "success",
+			setupMocks: func(m *MockSaveImage) {
+				m.On("SaveImage", imagePath, mock.Anything).Return(nil)
+			},
+			setupServer: func() (ts *httptest.Server) {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "image/jpeg")
+					w.WriteHeader(http.StatusOK)
+					w.Write(testImage)
+				}))
+			},
+			assertions: func(t *testing.T, m *MockSaveImage) {
+				m.AssertNumberOfCalls(t, "SaveImage", 1)
+			},
+			expectErr: false,
+		},
+		{
+			name: "timeout",
+			setupMocks: func(m *MockSaveImage) {
+				// no calls expected
+			},
+			setupServer: func() (ts *httptest.Server) {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					for range 20 {
+						time.Sleep(1 * time.Second)
+					} // sleep for the timeout
+					w.Header().Set("Content-Type", "image/jpeg")
+					w.WriteHeader(http.StatusOK)
+					w.Write(testImage)
+				}))
+			},
+			assertions: func(t *testing.T, m *MockSaveImage) {
+				// No calls expected
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockSave := new(MockSaveImage)
+			tc.setupMocks(mockSave)
+
+			origSaveImageFunc := SaveImageFunc
+			SaveImageFunc = mockSave.SaveImage
+			defer func() { SaveImageFunc = origSaveImageFunc }()
+
+			var imageUrl string
+
+			ts := tc.setupServer()
+			defer ts.Close()
+			imageUrl = ts.URL
+
+			res := fetchImageWithTimeout(imagePath, imageUrl, 5*time.Second)
+
+			switch tc.name {
+			case "success":
+				assert.True(t, res.RetryAfter.IsZero())
+			case "failure":
+				assert.True(t, res.RetryAfter.IsZero())
+				assert.Equal(t, res.HTTPStatus, 666)
+				assert.Equal(t, res.err, context.DeadlineExceeded)
+			}
+
+			if tc.expectErr {
+				assert.Error(t, res.err, "fetchImage should return an error")
+			} else {
+				assert.NoError(t, res.err, "fetchImage should not return an error")
 			}
 
 			tc.assertions(t, mockSave)

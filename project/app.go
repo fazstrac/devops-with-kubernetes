@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -187,7 +186,33 @@ func StartBackgroundImageFetcher(ctx context.Context, app *App) {
 		// Unlock before fetching the image
 		app.mutex.Unlock()
 
-		res := fetchImageWithTimeout(app.ImagePath, app.ImageUrl, 30*time.Second)
+		waitPrev := 1
+		waitCur := 1
+
+		start := time.Now()
+		elapsed := start.Sub(start)
+
+		// Try again until we've tried for one app.MaxAge, then give up
+		for elapsed < app.MaxAge {
+			res := fetchImageWithTimeout(app.ImagePath, app.ImageUrl, 30*time.Second)
+
+			// Did it succeed?
+			if res.err == nil && res.HTTPStatus == http.StatusOK {
+				break
+			} else if res.err == nil || res.err == context.DeadlineExceeded || !res.RetryAfter.IsZero() { // Can we retry?
+				time.Sleep(time.Duration(waitCur) * time.Second)
+
+				tmp := waitCur
+				waitCur = waitCur + waitPrev
+				waitPrev = tmp
+			}
+			elapsed = start.Sub(time.Now())
+		}
+
+		// Add here what to do when we retry too many times
+		if elapsed >= app.MaxAge {
+
+		}
 
 		// Lock again to update the state
 		app.mutex.Lock()
@@ -209,32 +234,7 @@ func StartBackgroundImageFetcher(ctx context.Context, app *App) {
 	for {
 		select {
 		case <-ticker.C:
-			app.mutex.Lock()
-			// Only fetch if not already fetching
-			if !app.IsFetchingImage {
-				app.IsFetchingImage = true
-				app.fetchDoneChan = make(chan struct{}) // Create a new channel for this fetch operation
-				app.mutex.Unlock()                      // Unlock before fetching the image
-
-				fmt.Println("Fetching image at", time.Now().Format(time.RFC3339))
-				err := fetchImage(app.ImagePath, app.ImageUrl)
-				fmt.Println("Image fetched at", time.Now().Format(time.RFC3339), "Error:", err)
-
-				app.mutex.Lock()
-				app.ImageFetchedAt = time.Now()
-				app.IsFetchingImage = false
-				close(app.fetchDoneChan) // Signal that fetching is done
-				app.mutex.Unlock()
-
-				if err.err != nil {
-					// Log the error, but do not terminate the fetcher
-					// In real application, use a proper logging framework
-					// Here we just print to stdout for simplicity
-					println("Failed to fetch image:", err.err.Error())
-				}
-			} else {
-				app.mutex.Unlock() // Already fetching, just unlock
-			}
+			//
 		case <-ctx.Done():
 			return
 		}
@@ -254,7 +254,7 @@ func fetchImageWithTimeout(fname string, url string, timeout time.Duration) fetc
 
 	select {
 	case <-ctx.Done():
-		return fetchError{666, ctx.Err()} // Return invalid HTTP status and timeout error
+		return fetchError{666, time.Time{}, ctx.Err()} // Return invalid HTTP status and timeout error
 	case err := <-doneChan:
 		return err // Return the result of fetchImage
 	}
@@ -262,12 +262,10 @@ func fetchImageWithTimeout(fname string, url string, timeout time.Duration) fetc
 
 // Fetches an image from the url and saves it as the fname
 func fetchImage(fname string, url string) fetchError {
-	// This will test against the following status codes:
-	// 200 OK --> save the image and return,
 
 	resp, err := http.Get(url)
 	if err != nil {
-		return fetchError{resp.StatusCode, -1, err}
+		return fetchError{666, time.Time{}, err}
 	}
 	defer resp.Body.Close()
 
@@ -275,7 +273,8 @@ func fetchImage(fname string, url string) fetchError {
 
 	switch resp.StatusCode {
 	case http.StatusOK:
-		wait = time.Now()
+		wait = time.Time{}
+		return fetchError{resp.StatusCode, wait, SaveImageFunc(fname, resp)}
 	case http.StatusTooManyRequests, http.StatusServiceUnavailable:
 		retryAfter := resp.Header.Get("Retry-After")
 
@@ -287,18 +286,13 @@ func fetchImage(fname string, url string) fetchError {
 				// Retry after this time
 				wait = t
 			} else {
-				// Default to 5 seconds
+				// Default to +5 seconds
 				wait = time.Now().Add(5 * time.Second)
 			}
 		}
-
-	}
-
-	if resp.StatusCode == http.StatusOK {
-		// Image fetched successfully, save it
-		return fetchError{resp.StatusCode, wait, SaveImageFunc(fname, resp)}
-	} else {
 		return fetchError{resp.StatusCode, wait, http.ErrMissingFile}
+	default:
+		return fetchError{resp.StatusCode, time.Time{}, http.ErrMissingFile}
 	}
 }
 
