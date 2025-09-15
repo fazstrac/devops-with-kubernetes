@@ -27,10 +27,15 @@ func main() {
 		30*time.Second,               // Timeout for fetching the image from the backend
 	)
 
-	app.LoadCachedImage()
+	// Check if the image is cached from previous runs
+	// and that it is still valid
+	err := app.LoadCachedImage()
+	if err != nil {
+		fmt.Println("No cached image found, will fetch a new one:", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go app.StartImageFetcher(ctx)
+	go app.Fetcher(ctx)
 	defer cancel()
 
 	router := setupRouter(app)
