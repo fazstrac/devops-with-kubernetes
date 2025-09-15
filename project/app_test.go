@@ -2,10 +2,13 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -73,16 +76,51 @@ func (m *MockFSOps) RemoveAll(path string) error {
 	return args.Error(0)
 }
 
+// Mock for os.FileInfo
+type MockFileInfo struct {
+	mock.Mock
+	modTime time.Time
+}
+
+func (m *MockFileInfo) Name() string {
+	return ""
+}
+
+func (m *MockFileInfo) Size() int64 {
+	return 0
+}
+
+func (m *MockFileInfo) Mode() os.FileMode {
+	return 0
+}
+
+func (m *MockFileInfo) ModTime() time.Time {
+	return m.modTime
+}
+
+func (m *MockFileInfo) IsDir() bool {
+	return false
+}
+
+func (m *MockFileInfo) Sys() interface{} {
+	return nil
+}
+
+// Mock for StatFunc
+type StatMock struct {
+	mock.Mock
+}
+
+func (m *StatMock) Stat(path string) (os.FileInfo, error) {
+	args := m.Called(path)
+	fi, _ := args.Get(0).(os.FileInfo)
+	return fi, args.Error(1)
+}
+
 // Test endpoints for the application
 
 func TestGetIndexSuccess(t *testing.T) {
-	app := NewApp(
-		"./cache/image.jpg",
-		"https://picsum.photos/1200",
-		10*time.Minute,
-		1*time.Minute,
-		30*time.Second,
-	)
+	app := &App{}
 
 	w := httptest.NewRecorder()
 	c, eng := gin.CreateTestContext(w)
@@ -93,43 +131,229 @@ func TestGetIndexSuccess(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestGetImageSuccess(t *testing.T) {
-	testImage := []byte("This is a test image content")
+func TestGetImageCases(t *testing.T) {
+	testImage := []byte("Test image contents")
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/jpeg")
-		w.WriteHeader(http.StatusOK)
-		w.Write(testImage)
-	}))
-	defer ts.Close()
+	app := &App{
+		ImagePath:         "mockimage.jpg",
+		MaxAge:            10 * time.Minute,
+		GracePeriod:       1 * time.Minute,
+		IsGracePeriodUsed: false,
+		mutex:             sync.RWMutex{},
+	}
 
-	// This test checks if the getImage handler works correctly.
-	// It creates a temporary directory for the image and checks if the response is correct.
-	dir, err := os.MkdirTemp(os.TempDir(), "test_get_image_*")
-	assert.NoError(t, err, "Failed to create temporary directory for test")
-	defer os.RemoveAll(dir) // Clean up the temporary directory after the test
+	type testCase struct {
+		name                 string
+		setupMocks           func(m *MockFileReader)
+		imageFetchedAt       time.Time
+		isGracePeriodUsed    bool
+		expectErr            bool
+		assertions           func(t *testing.T, m *MockFileReader)
+		expectHTTPStatusCode int
+	}
 
-	app := NewApp(
-		dir+"/image.jpg", // Use a temporary image path for testing
-		ts.URL,           // Use the test server URL
-		10*time.Minute,   // Set a reasonable max age for the image
-		1*time.Minute,    // Grace period during which the old image can be fetched _once_
-		30*time.Second,   // Timeout for fetching the image from the backend
-	)
+	// Setup the test cases
+	cases := []testCase{
+		{
+			name: "success",
+			setupMocks: func(m *MockFileReader) {
+				m.On("ReadFile", "mockimage.jpg").Return(testImage, nil)
+			},
+			assertions: func(t *testing.T, m *MockFileReader) {
+				m.AssertNumberOfCalls(t, "ReadFile", 1)
+			},
+			imageFetchedAt:       time.Now(),
+			isGracePeriodUsed:    false,
+			expectHTTPStatusCode: http.StatusOK,
+			expectErr:            false,
+		},
+		{
+			name: "success image in grace period",
+			setupMocks: func(m *MockFileReader) {
+				m.On("ReadFile", "mockimage.jpg").Return(testImage, nil)
+			},
+			assertions: func(t *testing.T, m *MockFileReader) {
+				m.AssertNumberOfCalls(t, "ReadFile", 1)
+			},
+			imageFetchedAt:       time.Now().Add(+1*time.Second - app.MaxAge - app.GracePeriod),
+			isGracePeriodUsed:    false,
+			expectHTTPStatusCode: http.StatusOK,
+			expectErr:            false,
+		},
+		{
+			name: "fail image being refreshed",
+			setupMocks: func(m *MockFileReader) {
+				// No calls expected
+			},
+			assertions: func(t *testing.T, m *MockFileReader) {
+				// No calls expected
+			},
+			imageFetchedAt:       time.Now().Add(-1*time.Second - app.MaxAge - app.GracePeriod),
+			isGracePeriodUsed:    true,
+			expectHTTPStatusCode: http.StatusServiceUnavailable,
+			expectErr:            true,
+		},
+		{
+			name: "fail image grace period already used",
+			setupMocks: func(m *MockFileReader) {
+				// No calls expected
+			},
+			assertions: func(t *testing.T, m *MockFileReader) {
+				// No calls expected
+			},
+			imageFetchedAt:       time.Now().Add(+1*time.Second - app.MaxAge - app.GracePeriod),
+			isGracePeriodUsed:    true,
+			expectHTTPStatusCode: http.StatusServiceUnavailable,
+			expectErr:            true,
+		},
+		{
+			name: "fail read image",
+			setupMocks: func(m *MockFileReader) {
+				m.On("ReadFile", "mockimage.jpg").Return([]byte{}, os.ErrNotExist)
+			},
+			assertions: func(t *testing.T, m *MockFileReader) {
+				m.AssertNumberOfCalls(t, "ReadFile", 1)
+			},
+			imageFetchedAt:       time.Now(),
+			isGracePeriodUsed:    false,
+			expectHTTPStatusCode: http.StatusInternalServerError,
+			expectErr:            true,
+		},
+	}
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	app.GetImage(c)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockReader := new(MockFileReader)
+			tc.setupMocks(mockReader)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "image/jpeg", w.Header().Get("Content-Type"))
-	assert.Equal(t, testImage, w.Body.Bytes(), "Response body should match the test image content")
+			origReadFile := ReadFileFunc
+			ReadFileFunc = mockReader.ReadFile
+			defer func() { ReadFileFunc = origReadFile }()
+			app.ImageFetchedAt = tc.imageFetchedAt // Ensure the image is fresh
+
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			app.GetImage(c)
+
+			assert.Equal(t, tc.expectHTTPStatusCode, w.Code, "GetImage should return the expected HTTP status code")
+
+			// Check if grace period usage is updated correctly
+			if !tc.isGracePeriodUsed {
+				if tc.imageFetchedAt.Before(time.Now().Add(-app.MaxAge)) {
+					assert.True(t, app.IsGracePeriodUsed, "Grace period should be marked as used")
+				} else {
+					assert.False(t, app.IsGracePeriodUsed, "Grace period should not be marked as used")
+				}
+			}
+
+			if !tc.expectErr {
+				assert.Equal(t, "image/jpeg", w.Header().Get("Content-Type"))
+				assert.Equal(t, testImage, w.Body.Bytes(), "Response body should match the test image content")
+			}
+			tc.assertions(t, mockReader)
+			mockReader.AssertExpectations(t)
+		})
+	}
 }
 
-// Test auxiliary functions for image handling
+func TestLoadCachedImageCases(t *testing.T) {
+	now := time.Now()
+	imagePath := "/tmp/test/image.jpg"
+	dirPath := filepath.Dir(imagePath)
+
+	type testCase struct {
+		name          string
+		statResponses map[string]struct {
+			fi  os.FileInfo
+			err error
+		}
+		expectErr     bool
+		expectFetched bool
+		expectModTime time.Time
+	}
+
+	cases := []testCase{
+		{
+			name: "directory missing",
+			statResponses: map[string]struct {
+				fi  os.FileInfo
+				err error
+			}{
+				dirPath: {nil, os.ErrNotExist},
+			},
+			expectErr: true,
+		},
+		{
+			name: "file missing",
+			statResponses: map[string]struct {
+				fi  os.FileInfo
+				err error
+			}{
+				dirPath:   {&MockFileInfo{}, nil},
+				imagePath: {nil, os.ErrNotExist},
+			},
+			expectErr:     false,
+			expectFetched: false,
+		},
+		{
+			name: "file exists",
+			statResponses: map[string]struct {
+				fi  os.FileInfo
+				err error
+			}{
+				dirPath:   {&MockFileInfo{}, nil},
+				imagePath: {&MockFileInfo{modTime: now}, nil},
+			},
+			expectErr:     false,
+			expectFetched: true,
+			expectModTime: now,
+		},
+		{
+			name: "file stat error",
+			statResponses: map[string]struct {
+				fi  os.FileInfo
+				err error
+			}{
+				dirPath:   {&MockFileInfo{}, nil},
+				imagePath: {nil, errors.New("stat error")},
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup StatMock
+			statMock := &StatMock{}
+			for path, resp := range tc.statResponses {
+				statMock.On("Stat", path).Return(resp.fi, resp.err)
+			}
+
+			// Patch StatFunc
+			origStatFunc := StatFunc
+			StatFunc = statMock.Stat
+			defer func() { StatFunc = origStatFunc }()
+
+			app := &App{ImagePath: imagePath}
+			err := app.LoadCachedImage()
+
+			if tc.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			if tc.expectFetched {
+				assert.WithinDuration(t, tc.expectModTime, app.ImageFetchedAt, time.Second)
+			} else {
+				assert.True(t, app.ImageFetchedAt.IsZero())
+			}
+			statMock.AssertExpectations(t)
+		})
+	}
+}
 
 func TestFetchImageCases(t *testing.T) {
-	testImage := []byte("This is a test image content")
+	testImage := []byte("Test image contents")
 	imagePath := "mockimage.jpg"
 
 	type testCase struct {
@@ -283,7 +507,7 @@ func TestFetchImageCases(t *testing.T) {
 }
 
 func TestReadImageCases(t *testing.T) {
-	testImage := []byte("This is a test image content")
+	testImage := []byte("Test image contents")
 
 	type testCase struct {
 		name       string
@@ -340,7 +564,7 @@ func TestReadImageCases(t *testing.T) {
 
 // saveImage tests
 func TestSaveImageCases(t *testing.T) {
-	testImage := []byte("This is a test image content")
+	testImage := []byte("Test image content")
 
 	type testCase struct {
 		name       string
@@ -463,6 +687,20 @@ func TestSaveImageCases(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mockFS := new(MockFSOps)
 			tc.setupMocks(mockFS)
+
+			origMkdirTemp := MkdirTempFunc
+			origCreate := CreateFunc
+			origCopy := CopyFunc
+			origRename := RenameFunc
+			origRemoveAll := RemoveAllFunc
+
+			defer func() {
+				MkdirTempFunc = origMkdirTemp
+				CreateFunc = origCreate
+				CopyFunc = origCopy
+				RenameFunc = origRename
+				RemoveAllFunc = origRemoveAll
+			}()
 
 			// Inject mocks into your saveImage logic
 			MkdirTempFunc = mockFS.MkdirTemp

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -50,7 +51,8 @@ func TestEndpointGetIndex(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestEndpointGetImageSuccess(t *testing.T) {
+// Cold start: No cached image, fetch from backend
+func TestEndpointGetImageSuccessColdStart(t *testing.T) {
 	testImage := []byte("This is a test image content")
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,11 +70,62 @@ func TestEndpointGetImageSuccess(t *testing.T) {
 
 	app := NewApp(
 		dir+"/image.jpg", // Use a temporary image path for testing
-		ts.URL,           // Use an invalid URL to simulate fetch error
-		10*time.Minute,   // Set a reasonable max age for the image
+		ts.URL,           // Use the test server URL as the backend
+		1*time.Minute,    // Set a reasonable max age for the image
 		1*time.Minute,    // Grace period during which the old image can be fetched _once_
-		30*time.Second,   // Timeout for fetching the image from the backend
+		5*time.Second,    // Timeout for fetching the image from the backend
 	)
+
+	err = app.LoadCachedImage()
+	assert.NoError(t, err, "LoadCachedImage should not fail even if no image is cached")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go app.Fetcher(ctx)
+	defer cancel()
+
+	time.Sleep(1 * time.Second) // Give some time for the fetcher to fetch the image
+
+	router := setupRouter(app) // Use the same router logic as in main.go
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/images/image.jpg", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "image/jpeg", w.Header().Get("Content-Type"))
+	assert.Equal(t, testImage, w.Body.Bytes(), "Response body should match the test image content")
+}
+
+// Similar to the cold start test, but simulates a warm start by preloading the image
+func TestEndpointGetImageSuccessWarmStart(t *testing.T) {
+	testImage := []byte("This is a test image content")
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.WriteHeader(http.StatusOK)
+		w.Write(testImage)
+	}))
+	defer ts.Close()
+
+	// This test checks if the getImage handler works correctly.
+	// It creates a temporary directory for the image and checks if the response is correct.
+	dir, err := os.MkdirTemp(os.TempDir(), "test_get_image_*")
+	assert.NoError(t, err, "Failed to create temporary directory for test")
+	defer os.RemoveAll(dir) // Clean up the temporary directory after the test
+
+	app := NewApp(
+		dir+"/image.jpg", // Use a temporary image path for testing
+		ts.URL,           // Use the test server URL as the backend
+		60*time.Second,   // Set a reasonable max age for the image
+		1*time.Minute,    // Grace period during which the old image can be fetched _once_
+		5*time.Second,    // Timeout for fetching the image from the backend
+	)
+
+	// Fetch the image to simulate a warm start
+	fetchImage(app.ImagePath, app.ImageUrl)
+
+	err = app.LoadCachedImage()
+	assert.NoError(t, err, "LoadCachedImage should not fail when image is cached")
 
 	router := setupRouter(app) // Use the same router logic as in main.go
 
@@ -106,6 +159,9 @@ func TestEndpointGetImageFailBadResponse(t *testing.T) {
 		1*time.Minute,
 		30*time.Second,
 	)
+
+	err = app.LoadCachedImage()
+	assert.NoError(t, err, "LoadCachedImage should not fail even if no image is cached")
 
 	router := setupRouter(app) // Use the same router logic as in main.go
 
@@ -200,7 +256,7 @@ func TestEndPointGetImageConcurrentSuccess(t *testing.T) {
 }
 
 func TestEndPointGetImageConcurrentFailTimeout(t *testing.T) {
-	fetchTimeout := 15 * time.Second
+	fetchTimeout := 45 * time.Second
 	serveWait := fetchTimeout + 5*time.Second
 
 	var wg sync.WaitGroup

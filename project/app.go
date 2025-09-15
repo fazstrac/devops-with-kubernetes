@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -128,9 +129,17 @@ func (app *App) GetImage(c *gin.Context) {
 		return
 	}
 
-	if age > app.MaxAge && !app.IsGracePeriodUsed {
-		app.IsGracePeriodUsed = true
-	} else if age <= app.MaxAge {
+	if age > app.MaxAge && age <= app.MaxAge+app.GracePeriod {
+		if !app.IsGracePeriodUsed {
+			app.IsGracePeriodUsed = true
+		} else {
+			c.Writer.Header().Set("Retry-After", "10")
+			c.String(http.StatusServiceUnavailable, "Image is being fetched, please try again later")
+			return
+		}
+	}
+
+	if age <= app.MaxAge {
 		app.IsGracePeriodUsed = false
 	}
 
@@ -160,6 +169,37 @@ func StartBackgroundImageFetcher(ctx context.Context, app *App) {
 	ticker := time.NewTicker(app.MaxAge)
 	defer ticker.Stop()
 
+	// Initial fetch on startup
+
+	// Lock for possible updates
+	app.mutex.Lock()
+
+	if !app.IsFetchingImage {
+		// mutex locked, can update the state
+		app.IsFetchingImage = true
+		app.fetchDoneChan = make(chan struct{}) // Create a new channel for this fetch operation
+		// Unlock before fetching the image
+		app.mutex.Unlock()
+
+		err := fetchImage(app.ImagePath, app.ImageUrl)
+
+		// Lock again to update the state
+		app.mutex.Lock()
+		app.ImageFetchedAt = time.Now()
+		app.IsFetchingImage = false
+		close(app.fetchDoneChan) // Signal that fetching is done
+		app.mutex.Unlock()
+
+		if err != nil {
+			// Log the error, but do not terminate the fetcher
+			// In real application, use a proper logging framework
+			// Here we just print to stdout for simplicity
+			println("Failed to fetch image:", err.Error())
+		}
+	} else {
+		app.mutex.Unlock() // Already fetching, just unlock
+	}
+
 	for {
 		select {
 		case <-ticker.C:
@@ -170,7 +210,9 @@ func StartBackgroundImageFetcher(ctx context.Context, app *App) {
 				app.fetchDoneChan = make(chan struct{}) // Create a new channel for this fetch operation
 				app.mutex.Unlock()                      // Unlock before fetching the image
 
+				fmt.Println("Fetching image at", time.Now().Format(time.RFC3339))
 				err := fetchImage(app.ImagePath, app.ImageUrl)
+				fmt.Println("Image fetched at", time.Now().Format(time.RFC3339), "Error:", err)
 
 				app.mutex.Lock()
 				app.ImageFetchedAt = time.Now()
