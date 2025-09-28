@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -17,29 +18,17 @@ var (
 	COMMIT_SHA string
 	COMMIT_TAG string
 	// Create function variables for easier testing/mocking
-	StatFunc       = os.Stat
-	ReadFileFunc   = os.ReadFile
-	MkdirTempFunc  = os.MkdirTemp
-	CreateFunc     = os.Create
-	RemoveAllFunc  = os.RemoveAll
-	RenameFunc     = os.Rename
-	CopyFunc       = io.Copy
-	FetchImageFunc = fetchImage
-	SaveImageFunc  = saveImage
-	waitTimes      = []time.Duration{
-		// Fibonacci-like backoff times
-		// in total, this will wait for 128 seconds
-		// before giving up on fetching the image
-		1 * time.Second,
-		1 * time.Second,
-		2 * time.Second,
-		5 * time.Second,
-		7 * time.Second,
-		12 * time.Second,
-		19 * time.Second,
-		31 * time.Second,
-		50 * time.Second,
-	}
+	StatFunc               = os.Stat
+	ReadFileFunc           = os.ReadFile
+	MkdirTempFunc          = os.MkdirTemp
+	CreateFunc             = os.Create
+	RemoveAllFunc          = os.RemoveAll
+	RenameFunc             = os.Rename
+	CopyFunc               = io.Copy
+	FetchImageFunc         = fetchImage
+	SaveImageFunc          = saveImage
+	RetryWithFibonacciFunc = retryWithFibonacci
+	retryCounts            = 5
 )
 
 type ImageFetcher func(ctx context.Context)
@@ -57,12 +46,6 @@ type App struct {
 	Fetcher           ImageFetcher
 	fetchDoneChan     chan struct{}
 	mutex             sync.RWMutex // Mutex to protect shared resources
-}
-
-type fetchError struct {
-	HTTPStatus int
-	RetryAfter time.Time
-	err        error
 }
 
 func NewApp(imagePath, imageUrl string, maxAge, gracePeriod time.Duration, fetchTimeout time.Duration) *App {
@@ -175,44 +158,89 @@ func StartBackgroundImageFetcher(ctx context.Context, app *App) {
 	defer ticker.Stop()
 
 	// Initial fetch on startup
+	err := tryFetchImage(ctx, app)
 
-	// Lock for possible updates
+	// Panic if the initial fetch fails
+	if err != nil {
+		fmt.Printf("Initial image fetch failed: %v\n", err)
+		panic("Initial image fetch failed")
+	}
+
+	for {
+		select {
+		case <-ticker.C:
+			err = tryFetchImage(ctx, app)
+			if err != nil {
+				fmt.Printf("Background image fetch failed: %v\n", err)
+			}
+
+			// Design choice: if fetch failed even after retries, reuse the old image until next fetch
+			// This prevents constant retries if the image URL is down for a long time
+			// The grace period will be used if needed
+			app.ImageFetchedAt = time.Now()
+			app.IsGracePeriodUsed = false
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func retryWithFibonacci(ctx context.Context, maxRetries int, fn func() (int, time.Duration, error)) error {
+	fib := [3]time.Duration{0, time.Second, time.Second} // Start with 0s, 1s
+
+	var lastErr error
+
+	for i := 0; i <= maxRetries; i++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		status, waitDuration, err := fn()
+		switch status {
+		case http.StatusOK:
+			return nil
+		case http.StatusTooManyRequests:
+		case http.StatusServiceUnavailable:
+			// Retryable error, will retry below
+			lastErr = err
+		case 666:
+		default:
+			// Other errors are considered non-retryable
+			return err
+		}
+
+		// Calculate the wait duration
+		// Use the maximum of the error's suggested wait time and the Fibonacci backoff
+		// This ensures we respect server's Retry-After header if provided
+		// and also implement our own backoff strategy
+		wait := max(waitDuration, fib[2])
+
+		// Wait using Fibonacci backoff
+		select {
+		case <-time.After(wait): // We waited long enough
+			// Continue to next retry
+			fib[2] = fib[0] + fib[1]
+		case <-ctx.Done(): // Context cancelled or timed out
+			return ctx.Err()
+		}
+	}
+
+	return fmt.Errorf("all retries failed: %w", lastErr)
+}
+
+// Attempts to fetch the image with retries and timeout
+func tryFetchImage(ctx context.Context, app *App) error {
 	app.mutex.Lock()
 
 	if !app.IsFetchingImage {
-		// mutex locked, can update the state
 		app.IsFetchingImage = true
 		app.fetchDoneChan = make(chan struct{}) // Create a new channel for this fetch operation
 		// Unlock before fetching the image
 		app.mutex.Unlock()
 
-		waitPrev := 1
-		waitCur := 1
-
-		start := time.Now()
-		elapsed := start.Sub(start)
-
-		// Try again until we've tried for one app.MaxAge, then give up
-		for elapsed < app.MaxAge {
-			res := fetchImageWithTimeout(app.ImagePath, app.ImageUrl, 30*time.Second)
-
-			// Did it succeed?
-			if res.err == nil && res.HTTPStatus == http.StatusOK {
-				break
-			} else if res.err == nil || res.err == context.DeadlineExceeded || !res.RetryAfter.IsZero() { // Can we retry?
-				time.Sleep(time.Duration(waitCur) * time.Second)
-
-				tmp := waitCur
-				waitCur = waitCur + waitPrev
-				waitPrev = tmp
-			}
-			elapsed = start.Sub(time.Now())
-		}
-
-		// Add here what to do when we retry too many times
-		if elapsed >= app.MaxAge {
-
-		}
+		err := RetryWithFibonacciFunc(ctx, retryCounts, func() (int, time.Duration, error) {
+			return FetchImageFunc(app.ImagePath, app.ImageUrl)
+		})
 
 		// Lock again to update the state
 		app.mutex.Lock()
@@ -221,78 +249,53 @@ func StartBackgroundImageFetcher(ctx context.Context, app *App) {
 		close(app.fetchDoneChan) // Signal that fetching is done
 		app.mutex.Unlock()
 
-		if res.err != nil {
-			// Log the error, but do not terminate the fetcher
-			// In real application, use a proper logging framework
-			// Here we just print to stdout for simplicity
-			println("Failed to fetch image:", res.err.Error())
-		}
+		return err
 	} else {
-		app.mutex.Unlock() // Already fetching, just unlock
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			//
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func fetchImageWithTimeout(fname string, url string, timeout time.Duration) fetchError {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	doneChan := make(chan fetchError)
-
-	go func() {
-		err := fetchImage(fname, url)
-		doneChan <- err
-	}()
-
-	select {
-	case <-ctx.Done():
-		return fetchError{666, time.Time{}, ctx.Err()} // Return invalid HTTP status and timeout error
-	case err := <-doneChan:
-		return err // Return the result of fetchImage
+		app.mutex.Unlock()
+		return nil
 	}
 }
 
 // Fetches an image from the url and saves it as the fname
-func fetchImage(fname string, url string) fetchError {
-
+// This handles the response based on the status code
+// Special cases:
+//
+//		200 OK
+//	  - Save the image
+//	  - File error is the result of SaveImageFunc
+//		429 Too Many Requests or 503 Service Unavailable:
+//	  - Parse Retry-After header if present and return it
+//	  - File error is http.ErrMissingFile
+//	  - Default wait is 0 --> caller to handle backoff
+//
+// FIXME: Implement proper response for 202 Accepted: extract Location header
+func fetchImage(fname string, url string) (int, time.Duration, error) {
 	resp, err := http.Get(url)
 	if err != nil {
-		return fetchError{666, time.Time{}, err}
+		return 666, time.Duration(0), err
 	}
 	defer resp.Body.Close()
 
-	var wait time.Time
+	wait := time.Duration(0)
 
 	switch resp.StatusCode {
 	case http.StatusOK:
-		wait = time.Time{}
-		return fetchError{resp.StatusCode, wait, SaveImageFunc(fname, resp)}
+		return resp.StatusCode, wait, SaveImageFunc(fname, resp)
 	case http.StatusTooManyRequests, http.StatusServiceUnavailable:
 		retryAfter := resp.Header.Get("Retry-After")
 
 		if retryAfter != "" {
 			if seconds, err := strconv.Atoi(retryAfter); err == nil {
 				// Retry after this many seconds
-				wait = time.Now().Add(time.Duration(seconds) * time.Second)
+				wait = time.Duration(seconds) * time.Second
 			} else if t, err := http.ParseTime(retryAfter); err == nil {
-				// Retry after this time
-				wait = t
-			} else {
-				// Default to +5 seconds
-				wait = time.Now().Add(5 * time.Second)
+				// Retry after this duration
+				wait = time.Until(t).Round(time.Second)
 			}
 		}
-		return fetchError{resp.StatusCode, wait, http.ErrMissingFile}
+		return resp.StatusCode, wait, http.ErrMissingFile
 	default:
-		return fetchError{resp.StatusCode, time.Time{}, http.ErrMissingFile}
+		return resp.StatusCode, wait, http.ErrMissingFile
 	}
 }
 

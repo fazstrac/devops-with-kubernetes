@@ -26,12 +26,24 @@ func NewMockResponse(payload []byte, statusCode int) *http.Response {
 	}
 }
 
-type MockSaveImage struct {
+type MockApp struct {
 	mock.Mock
 }
 
-func (m *MockSaveImage) SaveImage(imagePath string, resp *http.Response) error {
+func (m *MockApp) SaveImage(imagePath string, resp *http.Response) error {
 	args := m.Called(imagePath, resp)
+	return args.Error(0)
+}
+
+func (m *MockApp) FetchImage(fname string, url string) (int, time.Duration, error) {
+	args := m.Called(fname, url)
+	return args.Int(0), args.Get(1).(time.Duration), args.Error(2)
+}
+
+func (m *MockApp) RetryWithFibonacci(ctx context.Context, maxRetries int, fn func() (int, time.Duration, error)) error {
+	args := m.Called(ctx, maxRetries, fn)
+	fn()
+
 	return args.Error(0)
 }
 
@@ -359,16 +371,16 @@ func TestFetchImageCases(t *testing.T) {
 
 	type testCase struct {
 		name        string
-		setupMocks  func(m *MockSaveImage)
+		setupMocks  func(m *MockApp)
 		setupServer func() (ts *httptest.Server)
 		expectErr   bool
-		assertions  func(t *testing.T, m *MockSaveImage)
+		assertions  func(t *testing.T, m *MockApp)
 	}
 
 	cases := []testCase{
 		{
 			name: "success",
-			setupMocks: func(m *MockSaveImage) {
+			setupMocks: func(m *MockApp) {
 				m.On("SaveImage", imagePath, mock.Anything).Return(nil)
 			},
 			setupServer: func() (ts *httptest.Server) {
@@ -378,14 +390,14 @@ func TestFetchImageCases(t *testing.T) {
 					w.Write(testImage)
 				}))
 			},
-			assertions: func(t *testing.T, m *MockSaveImage) {
+			assertions: func(t *testing.T, m *MockApp) {
 				m.AssertNumberOfCalls(t, "SaveImage", 1)
 			},
 			expectErr: false,
 		},
 		{
 			name: "fail retry-later 1",
-			setupMocks: func(m *MockSaveImage) {
+			setupMocks: func(m *MockApp) {
 				// No calls expected
 			},
 			setupServer: func() (ts *httptest.Server) {
@@ -396,14 +408,14 @@ func TestFetchImageCases(t *testing.T) {
 					w.WriteHeader(http.StatusServiceUnavailable) // Simulate a temporary failure
 				}))
 			},
-			assertions: func(t *testing.T, m *MockSaveImage) {
+			assertions: func(t *testing.T, m *MockApp) {
 				// No calls expected
 			},
 			expectErr: true,
 		},
 		{
 			name: "fail retry-later 2",
-			setupMocks: func(m *MockSaveImage) {
+			setupMocks: func(m *MockApp) {
 				// No calls expected
 			},
 			setupServer: func() (ts *httptest.Server) {
@@ -412,44 +424,44 @@ func TestFetchImageCases(t *testing.T) {
 					w.WriteHeader(http.StatusServiceUnavailable) // Simulate a temporary failure
 				}))
 			},
-			assertions: func(t *testing.T, m *MockSaveImage) {
+			assertions: func(t *testing.T, m *MockApp) {
 				// No calls expected
 			},
 			expectErr: true,
 		},
 		{
 			name: "fail retry-later 3",
-			setupMocks: func(m *MockSaveImage) {
+			setupMocks: func(m *MockApp) {
 				// No calls expected
 			},
 			setupServer: func() (ts *httptest.Server) {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					// Format the date deliberately wrong
-					w.Header().Set("Retry-After", time.Now().Add(5*time.Second).Format(time.RFC1123))
+					// Format the date deliberately wrong by missing the timezone .In(gmt)
+					w.Header().Set("Retry-After", time.Now().Add(25*time.Second).Format(time.RFC1123))
 					w.WriteHeader(http.StatusServiceUnavailable) // Simulate a temporary failure
 				}))
 			},
-			assertions: func(t *testing.T, m *MockSaveImage) {
+			assertions: func(t *testing.T, m *MockApp) {
 				// No calls expected
 			},
 			expectErr: true,
 		},
 		{
 			name: "fail with bad url",
-			setupMocks: func(m *MockSaveImage) {
+			setupMocks: func(m *MockApp) {
 				// No calls expected
 			},
 			setupServer: func() (ts *httptest.Server) {
 				return nil // No server needed for invalid URL
 			},
-			assertions: func(t *testing.T, m *MockSaveImage) {
+			assertions: func(t *testing.T, m *MockApp) {
 				// No calls expected
 			},
 			expectErr: true,
 		},
 		{
 			name: "fail bad response",
-			setupMocks: func(m *MockSaveImage) {
+			setupMocks: func(m *MockApp) {
 				// No calls expected
 			},
 			setupServer: func() (ts *httptest.Server) {
@@ -458,14 +470,14 @@ func TestFetchImageCases(t *testing.T) {
 					w.WriteHeader(http.StatusForbidden) // Simulate a permanent failure
 				}))
 			},
-			assertions: func(t *testing.T, m *MockSaveImage) {
+			assertions: func(t *testing.T, m *MockApp) {
 				// No calls expected
 			},
 			expectErr: true,
 		},
 		{
 			name: "fail save image",
-			setupMocks: func(m *MockSaveImage) {
+			setupMocks: func(m *MockApp) {
 				m.On("SaveImage", imagePath, mock.Anything).Return(os.ErrPermission)
 			},
 			setupServer: func() (ts *httptest.Server) {
@@ -475,7 +487,7 @@ func TestFetchImageCases(t *testing.T) {
 					w.Write(testImage)
 				}))
 			},
-			assertions: func(t *testing.T, m *MockSaveImage) {
+			assertions: func(t *testing.T, m *MockApp) {
 				m.AssertNumberOfCalls(t, "SaveImage", 1)
 			},
 			expectErr: true,
@@ -484,17 +496,13 @@ func TestFetchImageCases(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			mockSave := new(MockSaveImage)
+			mockSave := new(MockApp)
 			tc.setupMocks(mockSave)
-
-			origWaitTimes := waitTimes
-			waitTimes = []time.Duration{10 * time.Millisecond, 20 * time.Millisecond, 30 * time.Millisecond, 40 * time.Millisecond, 50 * time.Millisecond}
 
 			origSaveImageFunc := SaveImageFunc
 			SaveImageFunc = mockSave.SaveImage
 			defer func() {
 				SaveImageFunc = origSaveImageFunc
-				waitTimes = origWaitTimes
 			}()
 
 			var imageUrl string
@@ -507,23 +515,47 @@ func TestFetchImageCases(t *testing.T) {
 				imageUrl = "http://invalid-url"
 			}
 
-			res := fetchImage(imagePath, imageUrl)
+			status, waitDuration, err := fetchImage(imagePath, imageUrl)
 
 			switch tc.name {
 			case "fail retry-later 1":
-				assert.WithinDuration(t, time.Now().Add(25*time.Second), res.RetryAfter, 1*time.Second)
+				diff := waitDuration - 25*time.Second
+				if diff < 0 {
+					diff = -diff
+				}
+				assert.LessOrEqual(t, diff, 2*time.Second)
+				assert.Equal(t, http.StatusServiceUnavailable, status)
+				assert.Equal(t, http.ErrMissingFile, err)
 			case "fail retry-later 2":
-				assert.WithinDuration(t, time.Now().Add(120*time.Second), res.RetryAfter, 1*time.Second)
+				assert.Equal(t, 120*time.Second, waitDuration)
+				assert.Equal(t, http.StatusServiceUnavailable, status)
+				assert.Equal(t, http.ErrMissingFile, err)
 			case "fail retry-later 3":
-				assert.WithinDuration(t, time.Now().Add(5*time.Second), res.RetryAfter, 1*time.Second)
-			case "fail with bad url", "fail bad response", "fail save image", "success":
-				assert.True(t, res.RetryAfter.IsZero())
+				assert.Equal(t, time.Duration(0), waitDuration)
+				assert.Equal(t, http.StatusServiceUnavailable, status)
+				assert.Equal(t, http.ErrMissingFile, err)
+			case "fail with bad url":
+				assert.Equal(t, time.Duration(0), waitDuration)
+				assert.Equal(t, 666, status)
+				assert.Error(t, err)
+			case "fail bad response":
+				assert.Equal(t, time.Duration(0), waitDuration)
+				assert.Equal(t, http.StatusForbidden, status)
+				assert.Equal(t, http.ErrMissingFile, err)
+			case "fail save image":
+				assert.Equal(t, time.Duration(0), waitDuration)
+				assert.Equal(t, http.StatusOK, status)
+				assert.Equal(t, os.ErrPermission, err)
+			case "success":
+				assert.Equal(t, time.Duration(0), waitDuration)
+				assert.Equal(t, http.StatusOK, status)
+				assert.NoError(t, err)
 			}
 
 			if tc.expectErr {
-				assert.Error(t, res.err, "fetchImage should return an error")
+				assert.Error(t, err, "fetchImage should return an error")
 			} else {
-				assert.NoError(t, res.err, "fetchImage should not return an error")
+				assert.NoError(t, err, "fetchImage should not return an error")
 			}
 
 			tc.assertions(t, mockSave)
@@ -532,53 +564,118 @@ func TestFetchImageCases(t *testing.T) {
 	}
 }
 
-func TestFetchImageWithTimeoutCases(t *testing.T) {
-	testImage := []byte("Test image contents")
-	imagePath := "mockimage.jpg"
-
+func TestRetryWithFibonacciCases(t *testing.T) {
 	type testCase struct {
-		name        string
-		setupMocks  func(m *MockSaveImage)
-		setupServer func() (ts *httptest.Server)
-		expectErr   bool
-		assertions  func(t *testing.T, m *MockSaveImage)
+		name       string
+		maxRetries int
+		setupApp   func() *App
+		fn         func() (int, time.Duration, error)
+		expectErr  bool
+		assertions func(t *testing.T, m *MockApp)
+	}
+
+	app := &App{
+		ImagePath:         "mockimage.jpg",
+		ImageUrl:          "http://mockurl/image.jpg",
+		MaxAge:            10 * time.Minute,
+		GracePeriod:       1 * time.Minute,
+		FetchImageTimeout: 1 * time.Minute,
+		IsGracePeriodUsed: false,
+		mutex:             sync.RWMutex{},
 	}
 
 	cases := []testCase{
 		{
-			name: "success",
-			setupMocks: func(m *MockSaveImage) {
-				m.On("SaveImage", imagePath, mock.Anything).Return(nil)
+			name:       "success first try",
+			maxRetries: 5,
+			setupApp: func() *App {
+				return app
 			},
-			setupServer: func() (ts *httptest.Server) {
-				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", "image/jpeg")
-					w.WriteHeader(http.StatusOK)
-					w.Write(testImage)
-				}))
+			fn: func() (int, time.Duration, error) {
+				return http.StatusOK, 0, nil
 			},
-			assertions: func(t *testing.T, m *MockSaveImage) {
-				m.AssertNumberOfCalls(t, "SaveImage", 1)
+			assertions: func(t *testing.T, m *MockApp) {
+				m.AssertExpectations(t)
 			},
 			expectErr: false,
 		},
 		{
-			name: "timeout",
-			setupMocks: func(m *MockSaveImage) {
-				// no calls expected
+			name:       "success after retries",
+			maxRetries: 5,
+			setupApp: func() *App {
+				return app
 			},
-			setupServer: func() (ts *httptest.Server) {
-				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					for range 20 {
-						time.Sleep(1 * time.Second)
-					} // sleep for the timeout
-					w.Header().Set("Content-Type", "image/jpeg")
-					w.WriteHeader(http.StatusOK)
-					w.Write(testImage)
-				}))
+			fn: func() func() (int, time.Duration, error) {
+				staticCounter := 0
+
+				return func() (int, time.Duration, error) {
+					staticCounter++
+					if staticCounter < 3 {
+						return http.StatusServiceUnavailable, 1 * time.Second, http.ErrMissingFile
+					}
+					return http.StatusOK, 0, nil
+				}
+			}(),
+			assertions: func(t *testing.T, m *MockApp) {
+				m.AssertExpectations(t)
 			},
-			assertions: func(t *testing.T, m *MockSaveImage) {
-				// No calls expected
+			expectErr: false,
+		},
+		{
+			name:       "fail all retries with ServiceUnavailable",
+			maxRetries: 3,
+			setupApp: func() *App {
+				return app
+			},
+			fn: func() (int, time.Duration, error) {
+				return http.StatusServiceUnavailable, 1 * time.Second, http.ErrMissingFile
+			},
+			assertions: func(t *testing.T, m *MockApp) {
+				m.AssertExpectations(t)
+			},
+			expectErr: true,
+		},
+		{
+			name:       "fail all retries with TooManyRequests",
+			maxRetries: 3,
+			setupApp: func() *App {
+				return app
+			},
+			fn: func() (int, time.Duration, error) {
+				return http.StatusTooManyRequests, 1 * time.Second, http.ErrMissingFile
+			},
+			assertions: func(t *testing.T, m *MockApp) {
+				m.AssertExpectations(t)
+			},
+			expectErr: true,
+		},
+		{
+			name:       "fail non-retryable error",
+			maxRetries: 5,
+			setupApp: func() *App {
+				return app
+			},
+			fn: func() (int, time.Duration, error) {
+				return 666, 0, errors.New("non-retryable error")
+			},
+			assertions: func(t *testing.T, m *MockApp) {
+				m.AssertExpectations(t)
+			},
+			expectErr: true,
+		},
+		{
+			name:       "fail context timeout",
+			maxRetries: 3,
+			setupApp: func() *App {
+				app.FetchImageTimeout = 1 * time.Second
+				return app
+			},
+			fn: func() (int, time.Duration, error) {
+				time.Sleep(3 * time.Second)
+				return http.StatusServiceUnavailable, 1 * time.Second, http.ErrMissingFile
+			},
+			assertions: func(t *testing.T, m *MockApp) {
+				m.AssertExpectations(t)
 			},
 			expectErr: true,
 		},
@@ -586,38 +683,126 @@ func TestFetchImageWithTimeoutCases(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			mockSave := new(MockSaveImage)
-			tc.setupMocks(mockSave)
+			mockFcn := new(MockApp)
 
-			origSaveImageFunc := SaveImageFunc
-			SaveImageFunc = mockSave.SaveImage
-			defer func() { SaveImageFunc = origSaveImageFunc }()
+			app := tc.setupApp()
 
-			var imageUrl string
+			ctx, cancel := context.WithTimeout(context.Background(), app.FetchImageTimeout)
+			defer cancel()
 
-			ts := tc.setupServer()
-			defer ts.Close()
-			imageUrl = ts.URL
-
-			res := fetchImageWithTimeout(imagePath, imageUrl, 5*time.Second)
-
-			switch tc.name {
-			case "success":
-				assert.True(t, res.RetryAfter.IsZero())
-			case "failure":
-				assert.True(t, res.RetryAfter.IsZero())
-				assert.Equal(t, res.HTTPStatus, 666)
-				assert.Equal(t, res.err, context.DeadlineExceeded)
-			}
-
+			err := retryWithFibonacci(ctx, tc.maxRetries, tc.fn)
 			if tc.expectErr {
-				assert.Error(t, res.err, "fetchImage should return an error")
+				assert.Error(t, err, "retryWithFibonacci should return an error")
 			} else {
-				assert.NoError(t, res.err, "fetchImage should not return an error")
+				assert.NoError(t, err, "retryWithFibonacci should not return an error")
 			}
+			tc.assertions(t, mockFcn)
+			mockFcn.AssertExpectations(t)
+		})
+	}
+}
 
-			tc.assertions(t, mockSave)
-			mockSave.AssertExpectations(t)
+func TestTryFetchImageCases(t *testing.T) {
+	type testCase struct {
+		name       string
+		setupApp   func() *App
+		setupMocks func(m *MockApp)
+		expectErr  bool
+		assertions func(t *testing.T, m *MockApp)
+	}
+
+	app := &App{
+		ImagePath:         "mockimage.jpg",
+		ImageUrl:          "http://mockurl/image.jpg",
+		MaxAge:            10 * time.Minute,
+		GracePeriod:       1 * time.Minute,
+		IsGracePeriodUsed: false,
+		mutex:             sync.RWMutex{},
+	}
+
+	cases := []testCase{
+		{
+			name: "success fetch",
+			setupApp: func() *App {
+				app.IsFetchingImage = false
+				app.FetchImageTimeout = 20 * time.Second
+				return app
+			},
+			setupMocks: func(m *MockApp) {
+				m.On("FetchImage", mock.Anything, mock.Anything).Return(http.StatusOK, time.Duration(0), nil)
+				m.On("RetryWithFibonacci", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+			},
+			assertions: func(t *testing.T, m *MockApp) {
+				m.AssertNumberOfCalls(t, "FetchImage", 1)
+				m.AssertNumberOfCalls(t, "RetryWithFibonacci", 1)
+				m.AssertExpectations(t)
+				assert.False(t, app.IsFetchingImage, "IsFetchingImage should be reset to false after fetch")
+			},
+			expectErr: false,
+		},
+		{
+			name: "success already fetching",
+			setupApp: func() *App {
+				app.IsFetchingImage = true
+				app.FetchImageTimeout = 20 * time.Second
+				return app
+			},
+			setupMocks: func(m *MockApp) {
+				// No calls expected
+			},
+			assertions: func(t *testing.T, m *MockApp) {
+				m.AssertNumberOfCalls(t, "FetchImage", 0)
+				m.AssertNumberOfCalls(t, "RetryWithFibonacci", 0)
+				m.AssertExpectations(t)
+				assert.True(t, app.IsFetchingImage, "IsFetchingImage should remain true")
+			},
+			expectErr: false,
+		},
+		{
+			name: "fail fetch",
+			setupApp: func() *App {
+				app.IsFetchingImage = false
+				app.FetchImageTimeout = 20 * time.Second
+				return app
+			},
+			setupMocks: func(m *MockApp) {
+				m.On("FetchImage", mock.Anything, mock.Anything).Return(http.StatusServiceUnavailable, 15*time.Second, http.ErrMissingFile)
+				m.On("RetryWithFibonacci", mock.Anything, mock.Anything, mock.Anything).Return(http.ErrMissingFile)
+			},
+			assertions: func(t *testing.T, m *MockApp) {
+				m.AssertNumberOfCalls(t, "FetchImage", 1)
+				m.AssertNumberOfCalls(t, "RetryWithFibonacci", 1)
+				m.AssertExpectations(t)
+				assert.False(t, app.IsFetchingImage, "IsFetchingImage should be reset to false after fetch")
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockFcn := new(MockApp)
+			tc.setupMocks(mockFcn)
+
+			origFetchImageFunc := FetchImageFunc
+			FetchImageFunc = mockFcn.FetchImage
+			origRetryWithFibonacci := RetryWithFibonacciFunc
+			RetryWithFibonacciFunc = mockFcn.RetryWithFibonacci
+
+			defer func() {
+				FetchImageFunc = origFetchImageFunc
+				RetryWithFibonacciFunc = origRetryWithFibonacci
+			}()
+
+			ctx := context.Background()
+
+			err := tryFetchImage(ctx, tc.setupApp())
+			if tc.expectErr {
+				assert.Error(t, err, "tryFetchImage should return an error")
+			} else {
+				assert.NoError(t, err, "tryFetchImage should not return an error")
+			}
+			tc.assertions(t, mockFcn)
 		})
 	}
 }
@@ -769,24 +954,6 @@ func TestSaveImageCases(t *testing.T) {
 				m.On("Copy", mock.Anything, mock.Anything).Return(int64(len(testImage)), nil)
 				m.On("Rename", mock.Anything, mock.Anything).Return(os.ErrPermission)
 				m.On("RemoveAll", mock.Anything).Return(nil)
-			},
-			assertions: func(t *testing.T, m *MockFSOps) {
-				m.AssertNumberOfCalls(t, "MkdirTemp", 1)
-				m.AssertNumberOfCalls(t, "Create", 1)
-				m.AssertNumberOfCalls(t, "Copy", 1)
-				m.AssertNumberOfCalls(t, "Rename", 1)
-				m.AssertNumberOfCalls(t, "RemoveAll", 1)
-			},
-			expectErr: true,
-		},
-		{
-			name: "fail removeall",
-			setupMocks: func(m *MockFSOps) {
-				m.On("MkdirTemp", mock.Anything, mock.Anything).Return("tempdir", nil)
-				m.On("Create", mock.Anything).Return(&os.File{}, nil)
-				m.On("Copy", mock.Anything, mock.Anything).Return(int64(len(testImage)), nil)
-				m.On("Rename", mock.Anything, mock.Anything).Return(nil)
-				m.On("RemoveAll", mock.Anything).Return(os.ErrPermission)
 			},
 			assertions: func(t *testing.T, m *MockFSOps) {
 				m.AssertNumberOfCalls(t, "MkdirTemp", 1)
