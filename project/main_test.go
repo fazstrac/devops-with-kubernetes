@@ -46,6 +46,7 @@ func TestStartupCases(t *testing.T) {
 		name         string
 		setupFunc    func() (ts *httptest.Server, dir string, ctx context.Context, cancel context.CancelFunc)
 		teardownFunc func(ts *httptest.Server, dir string, cancel context.CancelFunc)
+		isColdStart  bool
 		expectErr    bool
 	}
 
@@ -68,7 +69,8 @@ func TestStartupCases(t *testing.T) {
 				ts.Close()
 				os.RemoveAll(dir)
 			},
-			expectErr: false,
+			isColdStart: true,
+			expectErr:   false,
 		},
 		{
 			name: "failure cold start image not present timeout",
@@ -89,7 +91,8 @@ func TestStartupCases(t *testing.T) {
 				ts.Close()
 				os.RemoveAll(dir)
 			},
-			expectErr: true,
+			isColdStart: true,
+			expectErr:   true,
 		},
 		{
 			name: "success warm start image present",
@@ -98,10 +101,9 @@ func TestStartupCases(t *testing.T) {
 
 				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusForbidden)
-					t.Fatal("Backend should not be called on warm start")
+					t.Fatal("Backend should not be called")
 				}))
 				dir, _ := os.MkdirTemp(os.TempDir(), "test_startup_*")
-				// Pre-save an image to simulate warm start
 				err := os.WriteFile(dir+"/image.jpg", testImage, 0644)
 				if err != nil {
 					t.Fatalf("Failed to write test image: %v", err)
@@ -114,7 +116,8 @@ func TestStartupCases(t *testing.T) {
 				ts.Close()
 				os.RemoveAll(dir)
 			},
-			expectErr: false,
+			isColdStart: false,
+			expectErr:   false,
 		},
 	}
 
@@ -126,12 +129,10 @@ func TestStartupCases(t *testing.T) {
 			app := NewApp(
 				dir+"/image.jpg",  // Use a temporary image path for testing
 				ts.URL,            // Use the test server URL as the backend
-				10*time.Second,    // Set a reasonable max age for the image
+				20*time.Second,    // Set a reasonable max age for the image
 				1*time.Minute,     // Grace period during which the old image can be fetched _once_
 				FetchImageTimeout, // Timeout for fetching the image from the backend
 			)
-
-			app.LoadCachedImage()
 
 			fetchStatusChan := make(chan FetchResult)
 			go app.Fetcher(ctx, fetchStatusChan)
@@ -139,18 +140,26 @@ func TestStartupCases(t *testing.T) {
 				<-fetchStatusChan // Ensure we read the fetch result to avoid goroutine leak
 				close(fetchStatusChan)
 			}()
-			// Wait for the first fetch result
-			// This should complete quickly if the image is cached
-			fetchStatus := <-fetchStatusChan
 
-			fmt.Printf("Initial fetch status: %+v\n", fetchStatus)
+			var fetchStatus FetchResult
 
-			// Check if the fetch result matches expectations
-			fetchStatus = <-fetchStatusChan
+			if tc.isColdStart {
+				// Wait for the image check result
+				fetchStatus = <-fetchStatusChan
+				assert.False(t, fetchStatus.ImageAvailable)
+				// Wait for the first image fetch resul
+				fetchStatus = <-fetchStatusChan
+			} else {
+				// Wait for the image check result
+				fetchStatus = <-fetchStatusChan
+				assert.True(t, fetchStatus.ImageAvailable)
+			}
 
 			if tc.expectErr {
+				assert.False(t, fetchStatus.ImageAvailable, "Should not have an image")
 				assert.Error(t, fetchStatus.Err, "Expected fetch error but got none")
 			} else {
+				assert.True(t, fetchStatus.ImageAvailable, "Should have an image")
 				assert.NoError(t, fetchStatus.Err, "Did not expect fetch error but got one")
 			}
 

@@ -175,7 +175,6 @@ func StartBackgroundImageFetcher(ctx context.Context, out chan<- FetchResult, ap
 
 	// Calculate the time to wait until the next fetch
 	wait := max(app.MaxAge-time.Since(app.ImageFetchedAt), 200*time.Millisecond)
-	fmt.Printf("Initial wait before first fetch: %v\n", wait)
 
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
@@ -183,15 +182,11 @@ func StartBackgroundImageFetcher(ctx context.Context, out chan<- FetchResult, ap
 	// Wait for the initial wait duration or context cancellation
 	select {
 	case <-timer.C: // Initial wait is over, start the periodic fetch
-		fmt.Println("Starting background image fetcher with interval:", app.MaxAge)
 		ticker = time.NewTicker(app.MaxAge)
 		defer ticker.Stop()
 
 		err = tryFetchImage(ctx, app)
-		if err != nil {
-			fmt.Printf("Background image fetch failed: %v\n", err)
-		}
-		out <- FetchResult{ImageAvailable: err != nil, Path: app.ImagePath, Err: err}
+		out <- FetchResult{ImageAvailable: err == nil, Path: app.ImagePath, Err: err}
 	case <-ctx.Done(): // Context cancelled before the initial wait is over
 		out <- FetchResult{Path: "", Err: ctx.Err()}
 		return
@@ -204,9 +199,6 @@ func StartBackgroundImageFetcher(ctx context.Context, out chan<- FetchResult, ap
 		select {
 		case <-ticker.C:
 			err = tryFetchImage(ctx, app)
-			if err != nil {
-				fmt.Printf("Background image fetch failed: %v\n", err)
-			}
 			out <- FetchResult{Path: app.ImagePath, Err: err}
 
 			// Design choice: if fetch failed even after retries, reuse the old image until next fetch
