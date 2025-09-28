@@ -29,15 +29,25 @@ func main() {
 
 	// Check if the image is cached from previous runs
 	// and that it is still valid
-	err := app.LoadCachedImage()
-	if err != nil {
+	imageAvailable, err := app.LoadCachedImage()
+	if !imageAvailable {
 		fmt.Println("No cached image found, will fetch a new one:", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go app.Fetcher(ctx)
+	fetchStatusChan := make(chan FetchResult)
+
+	go app.Fetcher(ctx, fetchStatusChan)
 	defer cancel()
 
+	fetchStatus := <-fetchStatusChan
+
+	if fetchStatus.Err != nil {
+		fmt.Println("Initial image fetch failed:", fetchStatus.Err)
+		panic("Initial image fetch failed")
+	}
+
+	// Setup Gin router and routes
 	router := setupRouter(app)
 
 	fmt.Println("Server started in port", os.Getenv("PORT"))

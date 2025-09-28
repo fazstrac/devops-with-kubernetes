@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,7 +32,7 @@ var (
 	retryCounts            = 5
 )
 
-type ImageFetcher func(ctx context.Context)
+type ImageFetcher func(ctx context.Context, out chan<- FetchResult)
 
 type App struct {
 	ImagePath         string
@@ -48,6 +49,12 @@ type App struct {
 	mutex             sync.RWMutex // Mutex to protect shared resources
 }
 
+type FetchResult struct {
+	ImageAvailable bool
+	Path           string
+	Err            error
+}
+
 func NewApp(imagePath, imageUrl string, maxAge, gracePeriod time.Duration, fetchTimeout time.Duration) *App {
 	app := &App{
 		ImagePath:         imagePath,
@@ -57,24 +64,24 @@ func NewApp(imagePath, imageUrl string, maxAge, gracePeriod time.Duration, fetch
 		FetchImageTimeout: fetchTimeout,
 	}
 
-	app.Fetcher = func(ctx context.Context) {
-		StartBackgroundImageFetcher(ctx, app)
+	app.Fetcher = func(ctx context.Context, out chan<- FetchResult) {
+		StartBackgroundImageFetcher(ctx, out, app)
 	}
 
 	return app
 }
 
 // Initializes the app by loading the cached image if it exists
-func (app *App) LoadCachedImage() error {
+func (app *App) LoadCachedImage() (imageAvailable bool, err error) {
 	app.mutex.Lock()
 	defer app.mutex.Unlock()
 
 	// Check if the image directory exists
-	_, err := StatFunc(filepath.Dir(app.ImagePath))
+	_, err = StatFunc(filepath.Dir(app.ImagePath))
 	if err != nil {
 		// The directory does not exist or it's not accessible
 		// This is a non-recoverable error. Return the error and let the caller handle it
-		return err
+		return false, err
 	}
 
 	// Check if the image file exists and get its info
@@ -83,10 +90,10 @@ func (app *App) LoadCachedImage() error {
 		if os.IsNotExist(err) {
 			// The image file does not exist, nothing to load
 			// This is not an error
-			return nil
+			return false, nil
 		} else {
 			// Some other error occurred while accessing the file
-			return err
+			return false, err
 		}
 	}
 
@@ -96,7 +103,7 @@ func (app *App) LoadCachedImage() error {
 	// Reset grace period usage so it can be used again, even if the image is old
 	// Don't care if the grace period was used before the app restart
 	app.IsGracePeriodUsed = false
-	return nil
+	return true, nil
 }
 
 func (app *App) GetIndex(c *gin.Context) {
@@ -114,7 +121,7 @@ func (app *App) GetImage(c *gin.Context) {
 
 	if age > app.MaxAge+app.GracePeriod {
 		c.Writer.Header().Set("Retry-After", "10")
-		c.String(http.StatusServiceUnavailable, "Image is being fetched, please try again later")
+		c.String(http.StatusServiceUnavailable, "Image is way too old and it is being fetched, please try again later")
 		return
 	}
 
@@ -123,7 +130,7 @@ func (app *App) GetImage(c *gin.Context) {
 			app.IsGracePeriodUsed = true
 		} else {
 			c.Writer.Header().Set("Retry-After", "10")
-			c.String(http.StatusServiceUnavailable, "Image is being fetched, please try again later")
+			c.String(http.StatusServiceUnavailable, "Grace period already used. Image is being fetched, please try again later")
 			return
 		}
 	}
@@ -153,19 +160,46 @@ func (app *App) GetImage(c *gin.Context) {
 // Starts a background goroutine to fetch the image periodically
 // It tries to fetch the image immediately with a timeout,
 // then it starts a
-func StartBackgroundImageFetcher(ctx context.Context, app *App) {
-	ticker := time.NewTicker(app.MaxAge)
-	defer ticker.Stop()
+func StartBackgroundImageFetcher(ctx context.Context, out chan<- FetchResult, app *App) {
+	var ticker *time.Ticker
 
-	// Initial fetch on startup
-	err := tryFetchImage(ctx, app)
+	// Communicate the result of the cache load and image fetch via channel
+	// This allows the caller to know if the initial fetch succeeded or failed
+	// and act accordingly (e.g., panic if it failed)
+	//
+	// Design choice: we do not panic here, we let the caller decide what to do
+	// This is more flexible and allows for better error handling in the caller
 
-	// Panic if the initial fetch fails
-	if err != nil {
-		fmt.Printf("Initial image fetch failed: %v\n", err)
-		panic("Initial image fetch failed")
+	imageAvailable, err := app.LoadCachedImage()
+	out <- FetchResult{ImageAvailable: imageAvailable, Path: app.ImagePath, Err: err}
+
+	// Calculate the time to wait until the next fetch
+	wait := max(app.MaxAge-time.Since(app.ImageFetchedAt), 200*time.Millisecond)
+	fmt.Printf("Initial wait before first fetch: %v\n", wait)
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+
+	// Wait for the initial wait duration or context cancellation
+	select {
+	case <-timer.C: // Initial wait is over, start the periodic fetch
+		fmt.Println("Starting background image fetcher with interval:", app.MaxAge)
+		ticker = time.NewTicker(app.MaxAge)
+		defer ticker.Stop()
+
+		err = tryFetchImage(ctx, app)
+		if err != nil {
+			fmt.Printf("Background image fetch failed: %v\n", err)
+		}
+		out <- FetchResult{ImageAvailable: err != nil, Path: app.ImagePath, Err: err}
+	case <-ctx.Done(): // Context cancelled before the initial wait is over
+		out <- FetchResult{Path: "", Err: ctx.Err()}
+		return
 	}
 
+	// Actual periodic fetch loop
+	// This runs until the context is cancelled
+	// It fetches the image every MaxAge duration
 	for {
 		select {
 		case <-ticker.C:
@@ -173,6 +207,7 @@ func StartBackgroundImageFetcher(ctx context.Context, app *App) {
 			if err != nil {
 				fmt.Printf("Background image fetch failed: %v\n", err)
 			}
+			out <- FetchResult{Path: app.ImagePath, Err: err}
 
 			// Design choice: if fetch failed even after retries, reuse the old image until next fetch
 			// This prevents constant retries if the image URL is down for a long time
@@ -180,6 +215,8 @@ func StartBackgroundImageFetcher(ctx context.Context, app *App) {
 			app.ImageFetchedAt = time.Now()
 			app.IsGracePeriodUsed = false
 		case <-ctx.Done():
+			out <- FetchResult{Path: "", Err: ctx.Err()}
+
 			return
 		}
 	}
@@ -190,18 +227,18 @@ func retryWithFibonacci(ctx context.Context, maxRetries int, fn func() (int, tim
 
 	var lastErr error
 
-	for i := 0; i <= maxRetries; i++ {
+	for range maxRetries {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
 		status, waitDuration, err := fn()
+
 		switch status {
 		case http.StatusOK:
 			return nil
 		case http.StatusTooManyRequests:
 		case http.StatusServiceUnavailable:
-			// Retryable error, will retry below
 			lastErr = err
 		case 666:
 		default:
@@ -213,6 +250,7 @@ func retryWithFibonacci(ctx context.Context, maxRetries int, fn func() (int, tim
 		// Use the maximum of the error's suggested wait time and the Fibonacci backoff
 		// This ensures we respect server's Retry-After header if provided
 		// and also implement our own backoff strategy
+
 		wait := max(waitDuration, fib[2])
 
 		// Wait using Fibonacci backoff
@@ -220,11 +258,14 @@ func retryWithFibonacci(ctx context.Context, maxRetries int, fn func() (int, tim
 		case <-time.After(wait): // We waited long enough
 			// Continue to next retry
 			fib[2] = fib[0] + fib[1]
+			fib[0] = fib[1]
+			fib[1] = fib[2]
 		case <-ctx.Done(): // Context cancelled or timed out
 			return ctx.Err()
 		}
 	}
 
+	// All retries exhausted
 	return fmt.Errorf("all retries failed: %w", lastErr)
 }
 
@@ -239,7 +280,7 @@ func tryFetchImage(ctx context.Context, app *App) error {
 		app.mutex.Unlock()
 
 		err := RetryWithFibonacciFunc(ctx, retryCounts, func() (int, time.Duration, error) {
-			return FetchImageFunc(app.ImagePath, app.ImageUrl)
+			return FetchImageFunc(app.ImagePath, app.ImageUrl, app.FetchImageTimeout)
 		})
 
 		// Lock again to update the state
@@ -269,14 +310,21 @@ func tryFetchImage(ctx context.Context, app *App) error {
 //	  - Default wait is 0 --> caller to handle backoff
 //
 // FIXME: Implement proper response for 202 Accepted: extract Location header
-func fetchImage(fname string, url string) (int, time.Duration, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		return 666, time.Duration(0), err
+func fetchImage(fname string, url string, timeOut time.Duration) (status int, wait time.Duration, err error) {
+	client := http.Client{
+		Timeout: timeOut,
 	}
+	resp, err := client.Get(url)
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return http.StatusServiceUnavailable, time.Duration(0), err
+	} else if err != nil {
+		return 666, time.Duration(0), err // 666 is a custom code for other network errors
+	}
+
 	defer resp.Body.Close()
 
-	wait := time.Duration(0)
+	wait = time.Duration(0)
 
 	switch resp.StatusCode {
 	case http.StatusOK:

@@ -35,8 +35,8 @@ func (m *MockApp) SaveImage(imagePath string, resp *http.Response) error {
 	return args.Error(0)
 }
 
-func (m *MockApp) FetchImage(fname string, url string) (int, time.Duration, error) {
-	args := m.Called(fname, url)
+func (m *MockApp) FetchImage(fname string, url string, timeOut time.Duration) (int, time.Duration, error) {
+	args := m.Called(fname, url, timeOut)
 	return args.Int(0), args.Get(1).(time.Duration), args.Error(2)
 }
 
@@ -348,7 +348,7 @@ func TestLoadCachedImageCases(t *testing.T) {
 			defer func() { StatFunc = origStatFunc }()
 
 			app := &App{ImagePath: imagePath}
-			err := app.LoadCachedImage()
+			_, err := app.LoadCachedImage()
 
 			if tc.expectErr {
 				assert.Error(t, err)
@@ -371,6 +371,7 @@ func TestFetchImageCases(t *testing.T) {
 
 	type testCase struct {
 		name        string
+		httpTimeOut time.Duration
 		setupMocks  func(m *MockApp)
 		setupServer func() (ts *httptest.Server)
 		expectErr   bool
@@ -379,7 +380,8 @@ func TestFetchImageCases(t *testing.T) {
 
 	cases := []testCase{
 		{
-			name: "success",
+			name:        "success",
+			httpTimeOut: 1 * time.Minute,
 			setupMocks: func(m *MockApp) {
 				m.On("SaveImage", imagePath, mock.Anything).Return(nil)
 			},
@@ -396,7 +398,27 @@ func TestFetchImageCases(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name: "fail retry-later 1",
+			name:        "fail timeout",
+			httpTimeOut: 1 * time.Second,
+			setupMocks: func(m *MockApp) {
+				// No calls expected
+			},
+			setupServer: func() (ts *httptest.Server) {
+				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					time.Sleep(3 * time.Second)
+					w.Header().Set("Content-Type", "image/jpeg")
+					w.WriteHeader(http.StatusOK)
+					w.Write(testImage)
+				}))
+			},
+			assertions: func(t *testing.T, m *MockApp) {
+				// No calls expected
+			},
+			expectErr: true,
+		},
+		{
+			name:        "fail retry-later 1",
+			httpTimeOut: 1 * time.Minute,
 			setupMocks: func(m *MockApp) {
 				// No calls expected
 			},
@@ -414,7 +436,8 @@ func TestFetchImageCases(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "fail retry-later 2",
+			name:        "fail retry-later 2",
+			httpTimeOut: 1 * time.Minute,
 			setupMocks: func(m *MockApp) {
 				// No calls expected
 			},
@@ -430,7 +453,8 @@ func TestFetchImageCases(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "fail retry-later 3",
+			name:        "fail retry-later 3",
+			httpTimeOut: 1 * time.Minute,
 			setupMocks: func(m *MockApp) {
 				// No calls expected
 			},
@@ -447,7 +471,8 @@ func TestFetchImageCases(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "fail with bad url",
+			name:        "fail with bad url",
+			httpTimeOut: 1 * time.Minute,
 			setupMocks: func(m *MockApp) {
 				// No calls expected
 			},
@@ -460,7 +485,8 @@ func TestFetchImageCases(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "fail bad response",
+			name:        "fail bad response",
+			httpTimeOut: 1 * time.Minute,
 			setupMocks: func(m *MockApp) {
 				// No calls expected
 			},
@@ -476,7 +502,8 @@ func TestFetchImageCases(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "fail save image",
+			name:        "fail save image",
+			httpTimeOut: 1 * time.Minute,
 			setupMocks: func(m *MockApp) {
 				m.On("SaveImage", imagePath, mock.Anything).Return(os.ErrPermission)
 			},
@@ -515,9 +542,11 @@ func TestFetchImageCases(t *testing.T) {
 				imageUrl = "http://invalid-url"
 			}
 
-			status, waitDuration, err := fetchImage(imagePath, imageUrl)
+			status, waitDuration, err := fetchImage(imagePath, imageUrl, tc.httpTimeOut)
 
 			switch tc.name {
+			case "fail timeout":
+				assert.ErrorAs(t, err, &context.DeadlineExceeded)
 			case "fail retry-later 1":
 				diff := waitDuration - 25*time.Second
 				if diff < 0 {
