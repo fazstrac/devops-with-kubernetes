@@ -73,7 +73,7 @@ func TestStartupCases(t *testing.T) {
 			expectErr:   false,
 		},
 		{
-			name: "failure cold start image not present timeout",
+			name: "failure cold start image not present fetch timeout",
 			setupFunc: func() (*httptest.Server, string, context.Context, context.CancelFunc) {
 				ctx, cancel := context.WithCancel(context.Background())
 
@@ -93,6 +93,33 @@ func TestStartupCases(t *testing.T) {
 			},
 			isColdStart: true,
 			expectErr:   true,
+		},
+		{
+			name: "success cold start image not present first fetch timeout",
+			setupFunc: func() (*httptest.Server, string, context.Context, context.CancelFunc) {
+				ctx, cancel := context.WithCancel(context.Background())
+
+				counter := 0
+
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if counter == 0 {
+						time.Sleep(2 * FetchImageTimeout) // Trigger a timeout
+						counter++
+					}
+					w.Header().Set("Content-Type", "image/jpeg")
+					w.WriteHeader(http.StatusOK)
+					w.Write(testImage)
+				}))
+				dir, _ := os.MkdirTemp(os.TempDir(), "test_startup_*")
+				return ts, dir, ctx, cancel
+			},
+			teardownFunc: func(ts *httptest.Server, dir string, cancel context.CancelFunc) {
+				cancel()
+				ts.Close()
+				os.RemoveAll(dir)
+			},
+			isColdStart: true,
+			expectErr:   false,
 		},
 		{
 			name: "success warm start image present",
@@ -163,15 +190,6 @@ func TestStartupCases(t *testing.T) {
 				assert.NoError(t, fetchStatus.Err, "Did not expect fetch error but got one")
 			}
 
-			// router := setupRouter(app) // Use the same router logic as in main.go
-
-			// w := httptest.NewRecorder()
-			// req, _ := http.NewRequest("GET", "/images/image.jpg", nil)
-			// router.ServeHTTP(w, req)
-
-			// assert.Equal(t, http.StatusOK, w.Code)
-
-			// fmt.Println("Tearing down test case:", tc.name)
 			tc.teardownFunc(ts, dir, cancel)
 		})
 	}

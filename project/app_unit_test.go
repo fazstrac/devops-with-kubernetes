@@ -758,7 +758,7 @@ func TestTryFetchImageCases(t *testing.T) {
 				return app
 			},
 			setupMocks: func(m *MockApp) {
-				m.On("FetchImage", mock.Anything, mock.Anything).Return(http.StatusOK, time.Duration(0), nil)
+				m.On("FetchImage", mock.Anything, mock.Anything, mock.Anything).Return(http.StatusOK, time.Duration(0), nil)
 				m.On("RetryWithFibonacci", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 			},
 			assertions: func(t *testing.T, m *MockApp) {
@@ -795,7 +795,7 @@ func TestTryFetchImageCases(t *testing.T) {
 				return app
 			},
 			setupMocks: func(m *MockApp) {
-				m.On("FetchImage", mock.Anything, mock.Anything).Return(http.StatusServiceUnavailable, 15*time.Second, http.ErrMissingFile)
+				m.On("FetchImage", mock.Anything, mock.Anything, mock.Anything).Return(http.StatusServiceUnavailable, 15*time.Second, http.ErrMissingFile)
 				m.On("RetryWithFibonacci", mock.Anything, mock.Anything, mock.Anything).Return(http.ErrMissingFile)
 			},
 			assertions: func(t *testing.T, m *MockApp) {

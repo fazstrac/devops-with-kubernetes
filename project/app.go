@@ -117,6 +117,12 @@ func (app *App) GetImage(c *gin.Context) {
 	app.mutex.Lock()
 	defer app.mutex.Unlock()
 
+	if app.ImageFetchedAt.IsZero() {
+		c.Writer.Header().Set("Retry-After", "10")
+		c.String(http.StatusServiceUnavailable, "The image has never been but it is being fetched, please try again later")
+		return
+	}
+
 	age := time.Since(app.ImageFetchedAt)
 
 	if age > app.MaxAge+app.GracePeriod {
@@ -265,28 +271,28 @@ func retryWithFibonacci(ctx context.Context, maxRetries int, fn func() (int, tim
 func tryFetchImage(ctx context.Context, app *App) error {
 	app.mutex.Lock()
 
-	if !app.IsFetchingImage {
-		app.IsFetchingImage = true
-		app.fetchDoneChan = make(chan struct{}) // Create a new channel for this fetch operation
-		// Unlock before fetching the image
-		app.mutex.Unlock()
-
-		err := RetryWithFibonacciFunc(ctx, retryCounts, func() (int, time.Duration, error) {
-			return FetchImageFunc(app.ImagePath, app.ImageUrl, app.FetchImageTimeout)
-		})
-
-		// Lock again to update the state
-		app.mutex.Lock()
-		app.ImageFetchedAt = time.Now()
-		app.IsFetchingImage = false
-		close(app.fetchDoneChan) // Signal that fetching is done
-		app.mutex.Unlock()
-
-		return err
-	} else {
+	if app.IsFetchingImage {
 		app.mutex.Unlock()
 		return nil
 	}
+
+	app.IsFetchingImage = true
+	app.fetchDoneChan = make(chan struct{}) // Create a new channel for this fetch operation
+	// Unlock before fetching the image
+	app.mutex.Unlock()
+
+	err := RetryWithFibonacciFunc(ctx, retryCounts, func() (int, time.Duration, error) {
+		return FetchImageFunc(app.ImagePath, app.ImageUrl, app.FetchImageTimeout)
+	})
+
+	// Lock again to update the state
+	app.mutex.Lock()
+	app.ImageFetchedAt = time.Now()
+	app.IsFetchingImage = false
+	close(app.fetchDoneChan) // Signal that fetching is done
+	app.mutex.Unlock()
+
+	return err
 }
 
 // Fetches an image from the url and saves it as the fname
