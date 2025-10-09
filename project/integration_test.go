@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -160,17 +160,17 @@ func TestIntegrationGetImageCases3(t *testing.T) {
 		[]byte("This is a test image content3"),
 	}
 
-	FetchImageTimeout := 2 * time.Second // Set a short timeout for testing
+	backendServerOrcherstrator := make(chan int, 1)
+
+	FetchImageTimeout := 5 * time.Second // Set a short timeout for testing
 
 	appConfig := AppConfig{
-		MaxAge:       5 * time.Second,
-		GracePeriod:  2 * time.Second,
+		MaxAge:       2 * time.Second,
+		GracePeriod:  1 * time.Second,
 		FetchTimeout: FetchImageTimeout,
 	}
 
 	endpoint := "/images/image.jpg"
-
-	serverOrchestrationChannel := make(chan int, 1)
 
 	testCases := []testCase{
 		{
@@ -180,14 +180,14 @@ func TestIntegrationGetImageCases3(t *testing.T) {
 
 				// Serve different images on subsequent calls
 				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					index = <-serverOrchestrationChannel // Wait for signal to proceed
+					index = <-backendServerOrcherstrator
+					// If we run out of images, return 404
 
 					if index >= len(testImages) {
 						w.WriteHeader(http.StatusNotFound)
 						t.Fatal("Backend should not be called more than the number of test images")
 						return
 					}
-					fmt.Println("Backend called, serving image", index)
 					w.Header().Set("Content-Type", "image/jpeg")
 					w.WriteHeader(http.StatusOK)
 					w.Write(testImages[index])
@@ -223,32 +223,37 @@ func TestIntegrationGetImageCases3(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			runIntegrationTest2(t, tc, appConfig, testImages, endpoint, serverOrchestrationChannel)
+			runIntegrationTest2(t, tc, appConfig, testImages, endpoint, backendServerOrcherstrator)
 		})
 	}
 
-	close(serverOrchestrationChannel)
+	close(backendServerOrcherstrator)
 }
 
-func setupTestServer(handler http.HandlerFunc, initialFile []byte) (*httptest.Server, string, context.Context, context.CancelFunc) {
+func setupTestServer(handler http.HandlerFunc, initialFile []byte) (*httptest.Server, string, context.Context, context.CancelFunc, *sync.WaitGroup) {
+	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
 	ts := httptest.NewServer(handler)
 	dir, _ := os.MkdirTemp(os.TempDir(), "test_startup_*")
 	if initialFile != nil {
 		os.WriteFile(dir+"/image.jpg", initialFile, 0644)
 	}
-	return ts, dir, ctx, cancel
+
+	return ts, dir, ctx, cancel, &wg
 }
 
-func teardownTestServer(ts *httptest.Server, dir string, cancel context.CancelFunc) {
+func teardownTestServer(ts *httptest.Server, app *App, dir string, cancel context.CancelFunc, wg *sync.WaitGroup) {
 	cancel()
+	wg.Wait()
 	ts.Close()
 	os.RemoveAll(dir)
+	close(app.HeartbeatChan)
 }
 
 // Runs the integration test for a given test case for cases that do not test grace period logic
 func runIntegrationTest1(t *testing.T, tc testCase, appConfig AppConfig, testImages [][]byte, endpoint string) {
-	ts, dir, ctx, cancel := setupTestServer(tc.backendHTTPHandlerFunc, tc.initialFile)
+	ts, dir, ctx, cancel, wg := setupTestServer(tc.backendHTTPHandlerFunc, tc.initialFile)
+
 	app := NewApp(
 		dir+"/image.jpg",
 		ts.URL,
@@ -258,11 +263,9 @@ func runIntegrationTest1(t *testing.T, tc testCase, appConfig AppConfig, testIma
 	)
 
 	fetchStatusChan := make(chan FetchResult)
-	go app.ImageFetcher(ctx, fetchStatusChan)
-	defer func() {
-		<-fetchStatusChan
-		close(fetchStatusChan)
-	}()
+
+	wg.Add(1)
+	go app.ImageFetcher(ctx, fetchStatusChan, wg)
 
 	var fetchStatus FetchResult
 
@@ -292,6 +295,8 @@ func runIntegrationTest1(t *testing.T, tc testCase, appConfig AppConfig, testIma
 	for imageIndex := range testImages {
 		// Block until the image is available
 		if !imageAvailable {
+			app.HeartbeatChan <- struct{}{}
+
 			fetchStatus = <-fetchStatusChan
 			assert.True(t, fetchStatus.ImageAvailable)
 		}
@@ -310,12 +315,12 @@ func runIntegrationTest1(t *testing.T, tc testCase, appConfig AppConfig, testIma
 		imageAvailable = false
 	}
 
-	teardownTestServer(ts, dir, cancel)
+	teardownTestServer(ts, app, dir, cancel, wg)
 }
 
 // Runs the integration test for a given test case for cases that test grace period logic
-func runIntegrationTest2(t *testing.T, tc testCase, appConfig AppConfig, testImages [][]byte, endpoint string, serverOrchestrationChannel chan int) {
-	ts, dir, ctx, cancel := setupTestServer(tc.backendHTTPHandlerFunc, tc.initialFile)
+func runIntegrationTest2(t *testing.T, tc testCase, appConfig AppConfig, testImages [][]byte, endpoint string, backendServerOrchestratorChan chan int) {
+	ts, dir, ctx, cancel, wg := setupTestServer(tc.backendHTTPHandlerFunc, tc.initialFile)
 	app := NewApp(
 		dir+"/image.jpg",
 		ts.URL,
@@ -325,15 +330,10 @@ func runIntegrationTest2(t *testing.T, tc testCase, appConfig AppConfig, testIma
 	)
 
 	fetchStatusChan := make(chan FetchResult)
-	go app.ImageFetcher(ctx, fetchStatusChan)
-	defer func() {
-		<-fetchStatusChan
-		close(fetchStatusChan)
-	}()
+	wg.Add(1)
+	go app.ImageFetcher(ctx, fetchStatusChan, wg)
 
 	var fetchStatus FetchResult
-
-	serverOrchestrationChannel <- 0 // Allow the first fetch to proceed
 
 	// Block until the cache load is complete
 	fetchStatus = <-fetchStatusChan
@@ -353,70 +353,87 @@ func runIntegrationTest2(t *testing.T, tc testCase, appConfig AppConfig, testIma
 	imageAvailable := fetchStatus.ImageAvailable
 
 	// A bit complicated logic to test refetching the images
-	// without testing the grace period logic.
-	// The first iteration will use the initial fetch status
-	// Subsequent iterations will wait for a new fetch to complete
-	// before making the next request.
-	for imageIndex := 0; imageIndex < len(testImages)-1; imageIndex++ {
-		// Block until the image is available
-		if !imageAvailable {
-			fetchStatus = <-fetchStatusChan
-			assert.True(t, fetchStatus.ImageAvailable)
-		}
+	// 1. app.HeartbeatChan is used to trigger image fetches
+	// 2. backendServerOrchestratorChan is used to trigger the backend server to serve the next image
+	// 3. fetchStatusChan is used to wait for the fetch to complete
 
-		// RUN 1: Initial fetch or fetch after image became stale
-		// Elapsed time: 0
-		// Make HTTP request to the application
-		req := httptest.NewRequest("GET", endpoint, nil)
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-		resp := w.Result()
-		body := w.Body.Bytes()
-		assert.Equal(t, tc.expectedHTTPCode, resp.StatusCode)
-		assert.Equal(t, testImages[imageIndex], body)
+	imageIndex := 0 // We will use only the first image for initial fetch
 
-		// RUN 2: Fetch while image is still fresh
-		// Elapsed time: appConfig.GracePeriod / 2
-		// Let's fetch the image again immediately to ensure that we do not call the backend again
-		// TODO should somehow check that the backend was not called?
-		time.Sleep(appConfig.GracePeriod / 2)
-		req = httptest.NewRequest("GET", endpoint, nil)
-		w = httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-		resp = w.Result()
-		body = w.Body.Bytes()
-		assert.Equal(t, tc.expectedHTTPCode, resp.StatusCode)
-		assert.Equal(t, testImages[imageIndex], body)
+	// Block until the image is available
+	if !imageAvailable {
+		// Trigger image fetch from backend
+		app.HeartbeatChan <- struct{}{}
 
-		// RUN 3: Fetch after image became stale but within grace period
-		// Elapsed time: appConfig.MaxAge + (appConfig.GracePeriod / 2) --> within grace period
-		time.Sleep(appConfig.MaxAge) // We should now be within the grace period
-		req = httptest.NewRequest("GET", endpoint, nil)
-		w = httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-		resp = w.Result()
-		body = w.Body.Bytes()
-		assert.Equal(t, tc.expectedHTTPCode, resp.StatusCode)
-		assert.Equal(t, testImages[imageIndex], body)
+		// Trigger backend server to serve the next image
+		backendServerOrchestratorChan <- imageIndex
 
-		// RUN 4: Fetch after grace period has been used
-		// Elapsed time: appConfig.MaxAge + appConfig.GracePeriod / 2 --> grace period used
-		// No reason to wait because the grace period has been used
-		req = httptest.NewRequest("GET", endpoint, nil)
-		w = httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-		resp = w.Result()
-		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-
-		// This forces a wait for the next image fetch, but
-		// not for the last iteration --> avoids overfetching
-		imageAvailable = false
-		serverOrchestrationChannel <- imageIndex + 1 // Allow the next fetch to proceed
-
-		// Now the timing is off so we should synchronize with the fetcher
+		// Wait for fetch to complete
 		fetchStatus = <-fetchStatusChan
-		imageAvailable = fetchStatus.ImageAvailable
+		assert.True(t, fetchStatus.ImageAvailable)
 	}
 
-	teardownTestServer(ts, dir, cancel)
+	// RUN 1: Initial fetch or fetch after image became stale
+	// Make HTTP request to the application
+	req := httptest.NewRequest("GET", endpoint, nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	resp := w.Result()
+	body := w.Body.Bytes()
+	assert.Equal(t, tc.expectedHTTPCode, resp.StatusCode)
+	assert.Equal(t, testImages[imageIndex], body)
+
+	// RUN 2: Fetch while image is still fresh
+	// Let's fetch the image again immediately to ensure that we do not call the backend again
+	// TODO should somehow check that the backend was not called?
+	time.Sleep(appConfig.GracePeriod / 2)
+	req = httptest.NewRequest("GET", endpoint, nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	resp = w.Result()
+	body = w.Body.Bytes()
+	assert.Equal(t, tc.expectedHTTPCode, resp.StatusCode)
+	assert.Equal(t, testImages[imageIndex], body)
+
+	// At this point we should trigger the next image fetch
+	app.HeartbeatChan <- struct{}{}
+
+	// RUN 3: Fetch after image became stale but within grace period
+	time.Sleep(appConfig.MaxAge) // We should now be within the grace period
+	req = httptest.NewRequest("GET", endpoint, nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	resp = w.Result()
+	body = w.Body.Bytes()
+	assert.Equal(t, tc.expectedHTTPCode, resp.StatusCode)
+	assert.Equal(t, testImages[imageIndex], body)
+
+	// RUN 4: Fetch after grace period has been used
+	// No reason to wait because the grace period has been used
+	req = httptest.NewRequest("GET", endpoint, nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	resp = w.Result()
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	// Now we need to trigger the backend to serve the next image
+	imageIndex++
+	if imageIndex >= len(testImages) {
+		t.Fatal("Not enough test images to continue the test")
+	}
+	backendServerOrchestratorChan <- imageIndex
+
+	// Wait for fetch to complete
+	fetchStatus = <-fetchStatusChan
+	assert.True(t, fetchStatus.ImageAvailable)
+
+	// RUN 5: Fetch after new image has been fetched
+	req = httptest.NewRequest("GET", endpoint, nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	resp = w.Result()
+	body = w.Body.Bytes()
+	assert.Equal(t, tc.expectedHTTPCode, resp.StatusCode)
+	assert.Equal(t, testImages[imageIndex], body)
+
+	teardownTestServer(ts, app, dir, cancel, wg)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -36,9 +37,16 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	fetchStatusChan := make(chan FetchResult)
+	wg := sync.WaitGroup{}
+	app.HeartbeatChan = make(chan struct{})
+	wg.Add(1)
+	go app.ImageFetcher(ctx, fetchStatusChan, &wg)
 
-	go app.ImageFetcher(ctx, fetchStatusChan)
-	defer cancel()
+	app.StartPeriodicRefetchTrigger(ctx, &wg)
+	defer func() {
+		cancel()
+		wg.Wait()
+	}()
 
 	fetchStatus := <-fetchStatusChan
 

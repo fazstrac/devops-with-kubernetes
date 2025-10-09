@@ -32,7 +32,7 @@ var (
 	retryCounts            = 5
 )
 
-type ImageFetcher func(ctx context.Context, out chan<- FetchResult)
+type ImageFetcher func(ctx context.Context, out chan<- FetchResult, wg *sync.WaitGroup)
 
 type App struct {
 	ImagePath                  string
@@ -45,8 +45,8 @@ type App struct {
 	IsFetchingImageFromBackend bool
 	FetchImageTimeout          time.Duration
 	ImageFetcher               ImageFetcher
-	fetchDoneChan              chan struct{}
-	mutex                      sync.RWMutex // Mutex to protect shared resources
+	HeartbeatChan              chan struct{} // Channel to trigger image refetch
+	mutex                      sync.RWMutex  // Mutex to protect shared resources
 }
 
 type FetchResult struct {
@@ -64,7 +64,10 @@ func NewApp(imagePath, imageUrl string, maxAge, gracePeriod time.Duration, fetch
 		FetchImageTimeout: fetchTimeout,
 	}
 
-	app.ImageFetcher = func(ctx context.Context, out chan<- FetchResult) {
+	app.HeartbeatChan = make(chan struct{}, 1) // Buffered channel to avoid blocking
+
+	app.ImageFetcher = func(ctx context.Context, out chan<- FetchResult, wg *sync.WaitGroup) {
+		defer wg.Done()
 		StartBackgroundImageFetcher(ctx, out, app)
 	}
 
@@ -176,6 +179,26 @@ func (app *App) GetImage(c *gin.Context) {
 	}
 }
 
+// Starts a goroutine that periodically sends to RefetchTriggerChan
+func (app *App) StartPeriodicRefetchTrigger(ctx context.Context, wg *sync.WaitGroup) {
+	wg.Add(1)
+	go func() {
+		ticker := time.NewTicker(app.MaxAge)
+
+		for {
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				close(app.HeartbeatChan) // No more sends will happen
+				wg.Done()
+				return
+			case <-ticker.C:
+				app.HeartbeatChan <- struct{}{}
+			}
+		}
+	}()
+}
+
 // Auxiliary functions
 //
 
@@ -183,54 +206,43 @@ func (app *App) GetImage(c *gin.Context) {
 // It tries to fetch the image immediately with a timeout,
 // then it starts a
 func StartBackgroundImageFetcher(ctx context.Context, out chan<- FetchResult, app *App) {
-	var ticker *time.Ticker
 
 	// Communicate the result of the cache load and image fetch via channel
-	// This allows the caller to know if the initial fetch succeeded or failed
-	// and act accordingly (e.g., panic if it failed)
-	//
 	// Design choice: we do not panic here, we let the caller decide what to do
 	// This is more flexible and allows for better error handling in the caller
 
+	// Load the cached image if it exists
 	imageAvailable, err := app.LoadCachedImage()
 	out <- FetchResult{ImageAvailable: imageAvailable, Path: app.ImagePath, Err: err}
 
-	// Calculate the time to wait until the next fetch
-	wait := max(app.MaxAge-time.Since(app.ImageFetchedFromBackendAt), 200*time.Millisecond)
-
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
-
-	// Wait for the initial wait duration or context cancellation
-	select {
-	case <-timer.C: // Initial wait is over, start the periodic fetch
-		ticker = time.NewTicker(app.MaxAge)
-		defer ticker.Stop()
-
-		err = tryFetchImage(ctx, app)
-		out <- FetchResult{ImageAvailable: err == nil, Path: app.ImagePath, Err: err}
-	case <-ctx.Done(): // Context cancelled before the initial wait is over
-		out <- FetchResult{Path: "", Err: ctx.Err()}
-		return
-	}
-
-	// Actual periodic fetch loop
-	// This runs until the context is cancelled
-	// It fetches the image every MaxAge duration
+	// Loop to fetch the image
+	// triggered by the RefetchTriggerChan
+	// or by the context cancellation
+	//
+	// Design choice: we do not fetch the image immediately here
+	// We let the caller decide when to trigger the first fetch
+	// This allows for better control and avoids unnecessary fetches
+	// if the image is already fresh enough
 	for {
 		select {
-		case <-ticker.C:
+		case <-app.HeartbeatChan:
+			app.mutex.Lock()
+			app.IsFetchingImageFromBackend = true
+			app.mutex.Unlock()
+
 			err = tryFetchImage(ctx, app)
-			out <- FetchResult{Path: app.ImagePath, Err: err}
+			out <- FetchResult{ImageAvailable: err == nil, Path: app.ImagePath, Err: err}
 
 			// Design choice: if fetch failed even after retries, reuse the old image until next fetch
 			// This prevents constant retries if the image URL is down for a long time
 			// The grace period will be used if needed
+			app.mutex.Lock()
+			app.IsFetchingImageFromBackend = false
 			app.ImageFetchedFromBackendAt = time.Now()
 			app.IsGracePeriodUsed = false
+			app.mutex.Unlock()
 		case <-ctx.Done():
-			out <- FetchResult{Path: "", Err: ctx.Err()}
-
+			close(out)
 			return
 		}
 	}
@@ -284,30 +296,11 @@ func retryWithFibonacci(ctx context.Context, maxRetries int, fn func() (int, tim
 }
 
 // Attempts to fetch the image with retries and timeout
+// Does not lock the app mutex, caller must ensure proper locking
 func tryFetchImage(ctx context.Context, app *App) error {
-	app.mutex.Lock()
-
-	if app.IsFetchingImageFromBackend {
-		app.mutex.Unlock()
-		return nil
-	}
-
-	app.IsFetchingImageFromBackend = true
-	app.fetchDoneChan = make(chan struct{}) // Create a new channel for this fetch operation
-	// Unlock before fetching the image
-	app.mutex.Unlock()
-
 	err := RetryWithFibonacciFunc(ctx, retryCounts, func() (int, time.Duration, error) {
 		return FetchImageFunc(app.ImagePath, app.BackendImageUrl, app.FetchImageTimeout)
 	})
-
-	// Lock again to update the state
-	app.mutex.Lock()
-	app.ImageFetchedFromBackendAt = time.Now()
-	app.IsFetchingImageFromBackend = false
-	close(app.fetchDoneChan) // Signal that fetching is done
-	app.mutex.Unlock()
-
 	return err
 }
 

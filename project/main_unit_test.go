@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,8 +45,8 @@ func TestStartupCases(t *testing.T) {
 
 	type testCase struct {
 		name         string
-		setupFunc    func() (ts *httptest.Server, dir string, ctx context.Context, cancel context.CancelFunc)
-		teardownFunc func(ts *httptest.Server, dir string, cancel context.CancelFunc)
+		setupFunc    func() (ts *httptest.Server, dir string, ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup)
+		teardownFunc func(ts *httptest.Server, app *App, dir string, cancel context.CancelFunc, wg *sync.WaitGroup)
 		isColdStart  bool
 		expectErr    bool
 	}
@@ -53,8 +54,9 @@ func TestStartupCases(t *testing.T) {
 	testCases := []testCase{
 		{
 			name: "success cold start image not present",
-			setupFunc: func() (*httptest.Server, string, context.Context, context.CancelFunc) {
+			setupFunc: func() (*httptest.Server, string, context.Context, context.CancelFunc, *sync.WaitGroup) {
 				ctx, cancel := context.WithCancel(context.Background())
+				wg := &sync.WaitGroup{}
 
 				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "image/jpeg")
@@ -62,20 +64,23 @@ func TestStartupCases(t *testing.T) {
 					w.Write(testImage)
 				}))
 				dir, _ := os.MkdirTemp(os.TempDir(), "test_startup_*")
-				return ts, dir, ctx, cancel
+				return ts, dir, ctx, cancel, wg
 			},
-			teardownFunc: func(ts *httptest.Server, dir string, cancel context.CancelFunc) {
+			teardownFunc: func(ts *httptest.Server, app *App, dir string, cancel context.CancelFunc, wg *sync.WaitGroup) {
 				cancel()
 				ts.Close()
 				os.RemoveAll(dir)
+				wg.Wait()
+				close(app.HeartbeatChan)
 			},
 			isColdStart: true,
 			expectErr:   false,
 		},
 		{
 			name: "failure cold start image not present fetch timeout",
-			setupFunc: func() (*httptest.Server, string, context.Context, context.CancelFunc) {
+			setupFunc: func() (*httptest.Server, string, context.Context, context.CancelFunc, *sync.WaitGroup) {
 				ctx, cancel := context.WithCancel(context.Background())
+				wg := &sync.WaitGroup{}
 
 				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					time.Sleep(2 * FetchImageTimeout) // Trigger a timeout
@@ -84,20 +89,23 @@ func TestStartupCases(t *testing.T) {
 					w.Write(testImage)
 				}))
 				dir, _ := os.MkdirTemp(os.TempDir(), "test_startup_*")
-				return ts, dir, ctx, cancel
+				return ts, dir, ctx, cancel, wg
 			},
-			teardownFunc: func(ts *httptest.Server, dir string, cancel context.CancelFunc) {
+			teardownFunc: func(ts *httptest.Server, app *App, dir string, cancel context.CancelFunc, wg *sync.WaitGroup) {
 				cancel()
 				ts.Close()
 				os.RemoveAll(dir)
+				wg.Wait()
+				close(app.HeartbeatChan)
 			},
 			isColdStart: true,
 			expectErr:   true,
 		},
 		{
 			name: "success cold start image not present first fetch timeout",
-			setupFunc: func() (*httptest.Server, string, context.Context, context.CancelFunc) {
+			setupFunc: func() (*httptest.Server, string, context.Context, context.CancelFunc, *sync.WaitGroup) {
 				ctx, cancel := context.WithCancel(context.Background())
+				wg := &sync.WaitGroup{}
 
 				counter := 0
 
@@ -111,20 +119,23 @@ func TestStartupCases(t *testing.T) {
 					w.Write(testImage)
 				}))
 				dir, _ := os.MkdirTemp(os.TempDir(), "test_startup_*")
-				return ts, dir, ctx, cancel
+				return ts, dir, ctx, cancel, wg
 			},
-			teardownFunc: func(ts *httptest.Server, dir string, cancel context.CancelFunc) {
+			teardownFunc: func(ts *httptest.Server, app *App, dir string, cancel context.CancelFunc, wg *sync.WaitGroup) {
 				cancel()
 				ts.Close()
 				os.RemoveAll(dir)
+				wg.Wait()
+				close(app.HeartbeatChan)
 			},
 			isColdStart: true,
 			expectErr:   false,
 		},
 		{
 			name: "success warm start image present",
-			setupFunc: func() (*httptest.Server, string, context.Context, context.CancelFunc) {
+			setupFunc: func() (*httptest.Server, string, context.Context, context.CancelFunc, *sync.WaitGroup) {
 				ctx, cancel := context.WithCancel(context.Background())
+				wg := &sync.WaitGroup{}
 
 				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusForbidden)
@@ -136,12 +147,14 @@ func TestStartupCases(t *testing.T) {
 					t.Fatalf("Failed to write test image: %v", err)
 				}
 
-				return ts, dir, ctx, cancel
+				return ts, dir, ctx, cancel, wg
 			},
-			teardownFunc: func(ts *httptest.Server, dir string, cancel context.CancelFunc) {
+			teardownFunc: func(ts *httptest.Server, app *App, dir string, cancel context.CancelFunc, wg *sync.WaitGroup) {
 				cancel()
 				ts.Close()
 				os.RemoveAll(dir)
+				wg.Wait()
+				close(app.HeartbeatChan)
 			},
 			isColdStart: false,
 			expectErr:   false,
@@ -151,7 +164,7 @@ func TestStartupCases(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			fmt.Println("Running test case:", tc.name)
-			ts, dir, ctx, cancel := tc.setupFunc()
+			ts, dir, ctx, cancel, wg := tc.setupFunc()
 
 			app := NewApp(
 				dir+"/image.jpg",  // Use a temporary image path for testing
@@ -162,7 +175,9 @@ func TestStartupCases(t *testing.T) {
 			)
 
 			fetchStatusChan := make(chan FetchResult)
-			go app.ImageFetcher(ctx, fetchStatusChan)
+
+			wg.Add(1)
+			go app.ImageFetcher(ctx, fetchStatusChan, wg)
 			defer func() {
 				<-fetchStatusChan // Ensure we read the fetch result to avoid goroutine leak
 				close(fetchStatusChan)
@@ -174,7 +189,7 @@ func TestStartupCases(t *testing.T) {
 				// Wait for the image check result
 				fetchStatus = <-fetchStatusChan
 				assert.False(t, fetchStatus.ImageAvailable)
-				// Wait for the first image fetch resul
+				// Wait for the first image fetch result
 				fetchStatus = <-fetchStatusChan
 			} else {
 				// Wait for the image check result
@@ -190,7 +205,7 @@ func TestStartupCases(t *testing.T) {
 				assert.NoError(t, fetchStatus.Err, "Did not expect fetch error but got one")
 			}
 
-			tc.teardownFunc(ts, dir, cancel)
+			tc.teardownFunc(ts, app, dir, cancel, wg)
 		})
 	}
 }
