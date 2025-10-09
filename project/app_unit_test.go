@@ -242,7 +242,7 @@ func TestGetImageCases(t *testing.T) {
 			origReadFile := ReadFileFunc
 			ReadFileFunc = mockReader.ReadFile
 			defer func() { ReadFileFunc = origReadFile }()
-			app.ImageFetchedAt = tc.imageFetchedAt // Ensure the image is fresh
+			app.ImageFetchedFromBackendAt = tc.imageFetchedAt // Ensure the image is fresh
 
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
@@ -356,9 +356,9 @@ func TestLoadCachedImageCases(t *testing.T) {
 				assert.NoError(t, err)
 			}
 			if tc.expectFetched {
-				assert.WithinDuration(t, tc.expectModTime, app.ImageFetchedAt, time.Second)
+				assert.WithinDuration(t, tc.expectModTime, app.ImageFetchedFromBackendAt, time.Second)
 			} else {
-				assert.True(t, app.ImageFetchedAt.IsZero())
+				assert.True(t, app.ImageFetchedFromBackendAt.IsZero())
 			}
 			statMock.AssertExpectations(t)
 		})
@@ -605,7 +605,7 @@ func TestRetryWithFibonacciCases(t *testing.T) {
 
 	app := &App{
 		ImagePath:         "mockimage.jpg",
-		ImageUrl:          "http://mockurl/image.jpg",
+		BackendImageUrl:   "http://mockurl/image.jpg",
 		MaxAge:            10 * time.Minute,
 		GracePeriod:       1 * time.Minute,
 		FetchImageTimeout: 1 * time.Minute,
@@ -742,7 +742,7 @@ func TestTryFetchImageCases(t *testing.T) {
 
 	app := &App{
 		ImagePath:         "mockimage.jpg",
-		ImageUrl:          "http://mockurl/image.jpg",
+		BackendImageUrl:   "http://mockurl/image.jpg",
 		MaxAge:            10 * time.Minute,
 		GracePeriod:       1 * time.Minute,
 		IsGracePeriodUsed: false,
@@ -753,7 +753,7 @@ func TestTryFetchImageCases(t *testing.T) {
 		{
 			name: "success fetch",
 			setupApp: func() *App {
-				app.IsFetchingImage = false
+				app.IsFetchingImageFromBackend = false
 				app.FetchImageTimeout = 20 * time.Second
 				return app
 			},
@@ -765,14 +765,14 @@ func TestTryFetchImageCases(t *testing.T) {
 				m.AssertNumberOfCalls(t, "FetchImage", 1)
 				m.AssertNumberOfCalls(t, "RetryWithFibonacci", 1)
 				m.AssertExpectations(t)
-				assert.False(t, app.IsFetchingImage, "IsFetchingImage should be reset to false after fetch")
+				assert.False(t, app.IsFetchingImageFromBackend, "IsFetchingImage should be reset to false after fetch")
 			},
 			expectErr: false,
 		},
 		{
 			name: "success already fetching",
 			setupApp: func() *App {
-				app.IsFetchingImage = true
+				app.IsFetchingImageFromBackend = true
 				app.FetchImageTimeout = 20 * time.Second
 				return app
 			},
@@ -783,14 +783,14 @@ func TestTryFetchImageCases(t *testing.T) {
 				m.AssertNumberOfCalls(t, "FetchImage", 0)
 				m.AssertNumberOfCalls(t, "RetryWithFibonacci", 0)
 				m.AssertExpectations(t)
-				assert.True(t, app.IsFetchingImage, "IsFetchingImage should remain true")
+				assert.True(t, app.IsFetchingImageFromBackend, "IsFetchingImage should remain true")
 			},
 			expectErr: false,
 		},
 		{
 			name: "fail fetch",
 			setupApp: func() *App {
-				app.IsFetchingImage = false
+				app.IsFetchingImageFromBackend = false
 				app.FetchImageTimeout = 20 * time.Second
 				return app
 			},
@@ -802,7 +802,7 @@ func TestTryFetchImageCases(t *testing.T) {
 				m.AssertNumberOfCalls(t, "FetchImage", 1)
 				m.AssertNumberOfCalls(t, "RetryWithFibonacci", 1)
 				m.AssertExpectations(t)
-				assert.False(t, app.IsFetchingImage, "IsFetchingImage should be reset to false after fetch")
+				assert.False(t, app.IsFetchingImageFromBackend, "IsFetchingImage should be reset to false after fetch")
 			},
 			expectErr: true,
 		},

@@ -162,7 +162,7 @@ func TestStartupCases(t *testing.T) {
 			)
 
 			fetchStatusChan := make(chan FetchResult)
-			go app.Fetcher(ctx, fetchStatusChan)
+			go app.ImageFetcher(ctx, fetchStatusChan)
 			defer func() {
 				<-fetchStatusChan // Ensure we read the fetch result to avoid goroutine leak
 				close(fetchStatusChan)

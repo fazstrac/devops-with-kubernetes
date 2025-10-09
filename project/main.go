@@ -37,7 +37,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	fetchStatusChan := make(chan FetchResult)
 
-	go app.Fetcher(ctx, fetchStatusChan)
+	go app.ImageFetcher(ctx, fetchStatusChan)
 	defer cancel()
 
 	fetchStatus := <-fetchStatusChan

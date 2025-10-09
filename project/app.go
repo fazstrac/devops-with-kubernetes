@@ -35,18 +35,18 @@ var (
 type ImageFetcher func(ctx context.Context, out chan<- FetchResult)
 
 type App struct {
-	ImagePath         string
-	ImageUrl          string
-	ImageFetchedAt    time.Time
-	ImageLastServedAt time.Time
-	IsGracePeriodUsed bool
-	GracePeriod       time.Duration
-	MaxAge            time.Duration
-	IsFetchingImage   bool
-	FetchImageTimeout time.Duration
-	Fetcher           ImageFetcher
-	fetchDoneChan     chan struct{}
-	mutex             sync.RWMutex // Mutex to protect shared resources
+	ImagePath                  string
+	BackendImageUrl            string
+	ImageFetchedFromBackendAt  time.Time
+	ImageLastServedAt          time.Time
+	IsGracePeriodUsed          bool
+	GracePeriod                time.Duration
+	MaxAge                     time.Duration
+	IsFetchingImageFromBackend bool
+	FetchImageTimeout          time.Duration
+	ImageFetcher               ImageFetcher
+	fetchDoneChan              chan struct{}
+	mutex                      sync.RWMutex // Mutex to protect shared resources
 }
 
 type FetchResult struct {
@@ -58,13 +58,13 @@ type FetchResult struct {
 func NewApp(imagePath, imageUrl string, maxAge, gracePeriod time.Duration, fetchTimeout time.Duration) *App {
 	app := &App{
 		ImagePath:         imagePath,
-		ImageUrl:          imageUrl,
+		BackendImageUrl:   imageUrl,
 		MaxAge:            maxAge,
 		GracePeriod:       gracePeriod,
 		FetchImageTimeout: fetchTimeout,
 	}
 
-	app.Fetcher = func(ctx context.Context, out chan<- FetchResult) {
+	app.ImageFetcher = func(ctx context.Context, out chan<- FetchResult) {
 		StartBackgroundImageFetcher(ctx, out, app)
 	}
 
@@ -99,7 +99,7 @@ func (app *App) LoadCachedImage() (imageAvailable bool, err error) {
 
 	// If the image file exists, set the fetched time to its modification time
 	// This assumes that the image was fetched at the time it was last modified
-	app.ImageFetchedAt = info.ModTime()
+	app.ImageFetchedFromBackendAt = info.ModTime()
 	// Reset grace period usage so it can be used again, even if the image is old
 	// Don't care if the grace period was used before the app restart
 	app.IsGracePeriodUsed = false
@@ -117,30 +117,46 @@ func (app *App) GetImage(c *gin.Context) {
 	app.mutex.Lock()
 	defer app.mutex.Unlock()
 
-	if app.ImageFetchedAt.IsZero() {
+	// Has the image ever been fetched?
+	// NO --> return 503
+	if app.ImageFetchedFromBackendAt.IsZero() {
 		c.Writer.Header().Set("Retry-After", "10")
-		c.String(http.StatusServiceUnavailable, "The image has never been but it is being fetched, please try again later")
+		c.String(http.StatusServiceUnavailable, "The image it is being fetched, please try again later")
 		return
 	}
 
-	age := time.Since(app.ImageFetchedAt)
+	age := time.Since(app.ImageFetchedFromBackendAt)
 
-	if age > app.MaxAge+app.GracePeriod {
-		c.Writer.Header().Set("Retry-After", "10")
-		c.String(http.StatusServiceUnavailable, "Image is way too old and it is being fetched, please try again later")
-		return
-	}
-
-	if age > app.MaxAge && age <= app.MaxAge+app.GracePeriod {
-		if !app.IsGracePeriodUsed {
-			app.IsGracePeriodUsed = true
-		} else {
+	// Is the image being fetched?
+	// YES --> check if we can serve the old image or not
+	if app.IsFetchingImageFromBackend {
+		// Is the image too old and is being fetched?
+		if age > app.MaxAge+app.GracePeriod {
 			c.Writer.Header().Set("Retry-After", "10")
-			c.String(http.StatusServiceUnavailable, "Grace period already used. Image is being fetched, please try again later")
+			c.String(http.StatusServiceUnavailable, "Image is too old and it is being fetched, please try again later")
 			return
+		}
+
+		// Is the image too old but within the grace period and is being fetched?
+		if age > app.MaxAge && age <= app.MaxAge+app.GracePeriod {
+
+			// Has the grace period been used already?
+			// NO --> serve the old image and mark grace period as used
+			// YES --> return 503
+			if !app.IsGracePeriodUsed {
+				app.IsGracePeriodUsed = true
+			} else {
+				c.Writer.Header().Set("Retry-After", "10")
+				c.String(http.StatusServiceUnavailable, "Grace fetch already used. Image is being fetched, please try again later")
+				return
+			}
 		}
 	}
 
+	// We are here so there should be valid image to serve
+	app.ImageLastServedAt = time.Now()
+
+	// If the image is not too old, reset the grace period usage
 	if age <= app.MaxAge {
 		app.IsGracePeriodUsed = false
 	}
@@ -180,7 +196,7 @@ func StartBackgroundImageFetcher(ctx context.Context, out chan<- FetchResult, ap
 	out <- FetchResult{ImageAvailable: imageAvailable, Path: app.ImagePath, Err: err}
 
 	// Calculate the time to wait until the next fetch
-	wait := max(app.MaxAge-time.Since(app.ImageFetchedAt), 200*time.Millisecond)
+	wait := max(app.MaxAge-time.Since(app.ImageFetchedFromBackendAt), 200*time.Millisecond)
 
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
@@ -210,7 +226,7 @@ func StartBackgroundImageFetcher(ctx context.Context, out chan<- FetchResult, ap
 			// Design choice: if fetch failed even after retries, reuse the old image until next fetch
 			// This prevents constant retries if the image URL is down for a long time
 			// The grace period will be used if needed
-			app.ImageFetchedAt = time.Now()
+			app.ImageFetchedFromBackendAt = time.Now()
 			app.IsGracePeriodUsed = false
 		case <-ctx.Done():
 			out <- FetchResult{Path: "", Err: ctx.Err()}
@@ -271,24 +287,24 @@ func retryWithFibonacci(ctx context.Context, maxRetries int, fn func() (int, tim
 func tryFetchImage(ctx context.Context, app *App) error {
 	app.mutex.Lock()
 
-	if app.IsFetchingImage {
+	if app.IsFetchingImageFromBackend {
 		app.mutex.Unlock()
 		return nil
 	}
 
-	app.IsFetchingImage = true
+	app.IsFetchingImageFromBackend = true
 	app.fetchDoneChan = make(chan struct{}) // Create a new channel for this fetch operation
 	// Unlock before fetching the image
 	app.mutex.Unlock()
 
 	err := RetryWithFibonacciFunc(ctx, retryCounts, func() (int, time.Duration, error) {
-		return FetchImageFunc(app.ImagePath, app.ImageUrl, app.FetchImageTimeout)
+		return FetchImageFunc(app.ImagePath, app.BackendImageUrl, app.FetchImageTimeout)
 	})
 
 	// Lock again to update the state
 	app.mutex.Lock()
-	app.ImageFetchedAt = time.Now()
-	app.IsFetchingImage = false
+	app.ImageFetchedFromBackendAt = time.Now()
+	app.IsFetchingImageFromBackend = false
 	close(app.fetchDoneChan) // Signal that fetching is done
 	app.mutex.Unlock()
 
