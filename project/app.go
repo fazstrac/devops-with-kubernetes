@@ -15,15 +15,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type TempFile interface {
+	io.Closer
+	io.Writer
+	Name() string
+	// ...other methods you need
+}
+
 var (
 	COMMIT_SHA string
 	COMMIT_TAG string
 	// Create function variables for easier testing/mocking
 	StatFunc               = os.Stat
 	ReadFileFunc           = os.ReadFile
-	MkdirTempFunc          = os.MkdirTemp
-	CreateFunc             = os.Create
-	RemoveAllFunc          = os.RemoveAll
+	CreateTempFunc         = func(dir, pattern string) (TempFile, error) { return os.CreateTemp(dir, pattern) }
+	RemoveFunc             = os.Remove
 	RenameFunc             = os.Rename
 	CopyFunc               = io.Copy
 	FetchImageFunc         = fetchImage
@@ -230,6 +236,8 @@ func (app *App) StartBackgroundImageFetcher(ctx context.Context, wg *sync.WaitGr
 		for {
 			select {
 			case <-app.HeartbeatChan:
+				logger.Println("Received heartbeat, triggering image fetch from backend")
+
 				app.mutex.Lock()
 				app.IsFetchingImageFromBackend = true
 				app.mutex.Unlock()
@@ -250,7 +258,14 @@ func (app *App) StartBackgroundImageFetcher(ctx context.Context, wg *sync.WaitGr
 				app.ImageFetchedFromBackendAt = time.Now()
 				app.IsGracePeriodUsed = false
 				app.mutex.Unlock()
+
+				if err != nil {
+					logger.Println("Image fetch from backend failed:", err)
+				} else {
+					logger.Println("Image fetch from backend succeeded")
+				}
 			case <-ctx.Done():
+				logger.Println("Background image fetcher exiting due to context cancellation")
 				close(fetchResultChan)
 				return
 			}
@@ -265,12 +280,15 @@ func (app *App) StartBackgroundImageFetcher(ctx context.Context, wg *sync.WaitGr
 //
 
 // Retries the given function with Fibonacci backoff
+// TODO: Add argument to cap the maximum wait time
 func retryWithFibonacci(ctx context.Context, maxRetries int, fn func() (int, time.Duration, error)) error {
 	fib := [3]time.Duration{0, time.Second, time.Second} // Start with 0s, 1s
 
 	var lastErr error
 
-	for range maxRetries {
+	for i := range maxRetries {
+		logger.Printf("Image fetch attempt %d/%d\n", i+1, maxRetries)
+
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -296,6 +314,7 @@ func retryWithFibonacci(ctx context.Context, maxRetries int, fn func() (int, tim
 
 		wait := max(waitDuration, fib[2])
 
+		logger.Printf("Waiting for %v before next retry\n", wait)
 		// Wait using Fibonacci backoff
 		select {
 		case <-time.After(wait): // We waited long enough
@@ -325,15 +344,17 @@ func tryFetchImageFromBackend(ctx context.Context, app *App) error {
 // This handles the response based on the status code
 // Special cases:
 //
-//		200 OK
-//	  - Save the image
-//	  - File error is the result of SaveImageFunc
-//		429 Too Many Requests or 503 Service Unavailable:
-//	  - Parse Retry-After header if present and return it
-//	  - File error is http.ErrMissingFile
-//	  - Default wait is 0 --> caller to handle backoff
+// 200 OK
+//   - Save the image
+//   - File error is the result of SaveImageFunc
 //
-// FIXME: Implement proper response for 202 Accepted: extract Location header
+// 429 Too Many Requests
+// 503 Service Unavailable
+//   - Parse Retry-After header if present and return it
+//   - File error is http.ErrMissingFile
+//   - Default wait is 0 --> caller to handle backoff
+//
+// TODO: Implement proper response for 202 Accepted: extract Location header
 func fetchImage(fname string, url string, timeOut time.Duration) (status int, wait time.Duration, err error) {
 	client := http.Client{
 		Timeout: timeOut,
@@ -377,34 +398,33 @@ func fetchImage(fname string, url string, timeOut time.Duration) (status int, wa
 //
 // *** caller must ensure proper locking ***
 func saveImage(imagePath string, resp *http.Response) error {
+
+	// Split the imagePath into directory and filename
+	dir, fname := filepath.Dir(imagePath), filepath.Base(imagePath)
+
 	// Create a temporary file to save the image
-	//
-	dir, err := MkdirTempFunc(os.TempDir(), "dwk-project*")
+	tempFile, err := CreateTempFunc(dir, fname+".tmp.*")
 	if err != nil {
 		return err
 	}
-
-	defer RemoveAllFunc(dir)    // Clean up the temporary directory after the test
-	fname := dir + "/image.jpg" // hardcoded filename inside the temp dir
-
-	// Create the temporary file
-	out, err := CreateFunc(fname)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
+	defer tempFile.Close()
+	defer RemoveFunc(tempFile.Name()) // Clean up the temp file on any error
 
 	// Write the body to file
-	_, err = CopyFunc(out, resp.Body)
+	_, err = CopyFunc(tempFile, resp.Body)
 	if err != nil {
 		return err
 	}
 
-	// Finally move the temp file to the final location
-	// This is atomic on most operating systems
-	// and ensures that we don't end up with a partial file
-	// if the program crashes or is interrupted during the write
-	return RenameFunc(fname, imagePath)
+	// Finally rename the temp file to the actual image.
+	// This is atomic on most operating systems, assuming the source
+	// and destination are on the same filesystem.
+	err = RenameFunc(tempFile.Name(), imagePath)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // readImage reads the image file without locking

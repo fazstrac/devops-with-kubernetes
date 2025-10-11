@@ -24,7 +24,7 @@ func main() {
 		os.Setenv("PORT", port)
 	}
 
-	logger = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
+	logger = log.New(os.Stdout, "[DWK-Project] ", log.Ldate|log.Ltime|log.Lshortfile)
 
 	app := NewApp(
 		"./cache/image.jpg",          // Path to store the cached image

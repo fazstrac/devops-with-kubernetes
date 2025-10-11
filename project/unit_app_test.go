@@ -49,6 +49,27 @@ func (m *MockApp) RetryWithFibonacci(ctx context.Context, maxRetries int, fn fun
 
 // ***
 
+type MockOSFile struct {
+	mock.Mock
+}
+
+func (m *MockOSFile) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockOSFile) Write(p []byte) (n int, err error) {
+	args := m.Called(p)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockOSFile) Name() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+// ***
+
 type MockFileReader struct {
 	mock.Mock
 }
@@ -64,14 +85,9 @@ type MockFSOps struct {
 	mock.Mock
 }
 
-func (m *MockFSOps) MkdirTemp(dir, pattern string) (string, error) {
+func (m *MockFSOps) CreateTemp(dir, pattern string) (TempFile, error) {
 	args := m.Called(dir, pattern)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockFSOps) Create(imagePath string) (*os.File, error) {
-	args := m.Called(imagePath)
-	return args.Get(0).(*os.File), args.Error(1)
+	return args.Get(0).(TempFile), args.Error(1)
 }
 
 func (m *MockFSOps) Copy(dst io.Writer, src io.Reader) (int64, error) {
@@ -84,7 +100,7 @@ func (m *MockFSOps) Rename(oldpath, newpath string) error {
 	return args.Error(0)
 }
 
-func (m *MockFSOps) RemoveAll(path string) error {
+func (m *MockFSOps) Remove(path string) error {
 	args := m.Called(path)
 	return args.Error(0)
 }
@@ -115,7 +131,7 @@ func (m *MockFileInfo) IsDir() bool {
 	return false
 }
 
-func (m *MockFileInfo) Sys() interface{} {
+func (m *MockFileInfo) Sys() any {
 	return nil
 }
 
@@ -885,98 +901,76 @@ func TestSaveImageCases(t *testing.T) {
 
 	type testCase struct {
 		name       string
-		setupMocks func(m *MockFSOps)
+		setupMocks func(m *MockFSOps, mf *MockOSFile)
 		expectErr  bool
-		assertions func(t *testing.T, m *MockFSOps)
+		assertions func(t *testing.T, m *MockFSOps, mf *MockOSFile)
 	}
 
 	cases := []testCase{
 		{
 			name: "success",
-			setupMocks: func(m *MockFSOps) {
-				m.On("MkdirTemp", mock.Anything, mock.Anything).Return("tempdir", nil)
-				m.On("Create", mock.Anything).Return(&os.File{}, nil)
+			setupMocks: func(m *MockFSOps, mf *MockOSFile) {
+				m.On("CreateTemp", mock.Anything, mock.Anything).Return(mf, nil)
 				m.On("Copy", mock.Anything, mock.Anything).Return(int64(len(testImage)), nil)
 				m.On("Rename", mock.Anything, mock.Anything).Return(nil)
-				m.On("RemoveAll", mock.Anything).Return(nil)
+				m.On("Remove", mock.Anything).Return(nil)
 			},
-			assertions: func(t *testing.T, m *MockFSOps) {
-				m.AssertNumberOfCalls(t, "MkdirTemp", 1)
-				m.AssertNumberOfCalls(t, "Create", 1)
+			assertions: func(t *testing.T, m *MockFSOps, mf *MockOSFile) {
+				m.AssertNumberOfCalls(t, "CreateTemp", 1)
 				m.AssertNumberOfCalls(t, "Copy", 1)
 				m.AssertNumberOfCalls(t, "Rename", 1)
-				m.AssertNumberOfCalls(t, "RemoveAll", 1)
+				mf.AssertNumberOfCalls(t, "Close", 1)
+				mf.AssertNumberOfCalls(t, "Name", 2)
 			},
 		},
 		{
-			name: "fail mkdirTemp",
-			setupMocks: func(m *MockFSOps) {
-				m.On("MkdirTemp", mock.Anything, mock.Anything).Return("", os.ErrPermission)
-				m.On("Create", mock.Anything).Return(&os.File{}, nil)
+			name: "fail CreateTemp",
+			setupMocks: func(m *MockFSOps, mf *MockOSFile) {
+				m.On("CreateTemp", mock.Anything, mock.Anything).Return(mf, os.ErrPermission)
 				m.On("Copy", mock.Anything, mock.Anything).Return(int64(len(testImage)), nil)
 				m.On("Rename", mock.Anything, mock.Anything).Return(nil)
-				m.On("RemoveAll", mock.Anything).Return(nil)
+				m.On("Remove", mock.Anything).Return(nil)
 			},
-			assertions: func(t *testing.T, m *MockFSOps) {
-				m.AssertNumberOfCalls(t, "MkdirTemp", 1)
-				m.AssertNumberOfCalls(t, "Create", 0)
+			assertions: func(t *testing.T, m *MockFSOps, mf *MockOSFile) {
+				m.AssertNumberOfCalls(t, "CreateTemp", 1)
 				m.AssertNumberOfCalls(t, "Copy", 0)
 				m.AssertNumberOfCalls(t, "Rename", 0)
-				m.AssertNumberOfCalls(t, "RemoveAll", 0)
-			},
-			expectErr: true,
-		},
-		{
-			name: "fail create",
-			setupMocks: func(m *MockFSOps) {
-				m.On("MkdirTemp", mock.Anything, mock.Anything).Return("tempdir", nil)
-				m.On("Create", mock.Anything).Return(&os.File{}, os.ErrPermission)
-				m.On("Copy", mock.Anything, mock.Anything).Return(int64(len(testImage)), nil)
-				m.On("Rename", mock.Anything, mock.Anything).Return(nil)
-				m.On("RemoveAll", mock.Anything).Return(nil)
-			},
-			assertions: func(t *testing.T, m *MockFSOps) {
-				m.AssertNumberOfCalls(t, "MkdirTemp", 1)
-				m.AssertNumberOfCalls(t, "Create", 1)
-				m.AssertNumberOfCalls(t, "Copy", 0)
-				m.AssertNumberOfCalls(t, "Rename", 0)
-				m.AssertNumberOfCalls(t, "RemoveAll", 1)
+				mf.AssertNumberOfCalls(t, "Close", 0)
+				mf.AssertNumberOfCalls(t, "Name", 0)
 			},
 			expectErr: true,
 		},
 		{
 			name: "fail copy",
-			setupMocks: func(m *MockFSOps) {
-				m.On("MkdirTemp", mock.Anything, mock.Anything).Return("tempdir", nil)
-				m.On("Create", mock.Anything).Return(&os.File{}, nil)
-				m.On("Copy", mock.Anything, mock.Anything).Return(int64(len(testImage)), os.ErrClosed)
+			setupMocks: func(m *MockFSOps, mf *MockOSFile) {
+				m.On("CreateTemp", mock.Anything, mock.Anything).Return(mf, nil)
+				m.On("Copy", mock.Anything, mock.Anything).Return(int64(0), os.ErrClosed)
 				m.On("Rename", mock.Anything, mock.Anything).Return(nil)
-				m.On("RemoveAll", mock.Anything).Return(nil)
+				m.On("Remove", mock.Anything).Return(nil)
 			},
-			assertions: func(t *testing.T, m *MockFSOps) {
-				m.AssertNumberOfCalls(t, "MkdirTemp", 1)
-				m.AssertNumberOfCalls(t, "Create", 1)
+			assertions: func(t *testing.T, m *MockFSOps, mf *MockOSFile) {
+				m.AssertNumberOfCalls(t, "CreateTemp", 1)
 				m.AssertNumberOfCalls(t, "Copy", 1)
 				m.AssertNumberOfCalls(t, "Rename", 0)
-				m.AssertNumberOfCalls(t, "RemoveAll", 1)
+				mf.AssertNumberOfCalls(t, "Close", 1)
+				mf.AssertNumberOfCalls(t, "Name", 1)
 			},
 			expectErr: true,
 		},
 		{
 			name: "fail rename",
-			setupMocks: func(m *MockFSOps) {
-				m.On("MkdirTemp", mock.Anything, mock.Anything).Return("tempdir", nil)
-				m.On("Create", mock.Anything).Return(&os.File{}, nil)
+			setupMocks: func(m *MockFSOps, mf *MockOSFile) {
+				m.On("CreateTemp", mock.Anything, mock.Anything).Return(mf, nil)
 				m.On("Copy", mock.Anything, mock.Anything).Return(int64(len(testImage)), nil)
 				m.On("Rename", mock.Anything, mock.Anything).Return(os.ErrPermission)
-				m.On("RemoveAll", mock.Anything).Return(nil)
+				m.On("Remove", mock.Anything).Return(nil)
 			},
-			assertions: func(t *testing.T, m *MockFSOps) {
-				m.AssertNumberOfCalls(t, "MkdirTemp", 1)
-				m.AssertNumberOfCalls(t, "Create", 1)
+			assertions: func(t *testing.T, m *MockFSOps, mf *MockOSFile) {
+				m.AssertNumberOfCalls(t, "CreateTemp", 1)
 				m.AssertNumberOfCalls(t, "Copy", 1)
 				m.AssertNumberOfCalls(t, "Rename", 1)
-				m.AssertNumberOfCalls(t, "RemoveAll", 1)
+				mf.AssertNumberOfCalls(t, "Close", 1)
+				mf.AssertNumberOfCalls(t, "Name", 2)
 			},
 			expectErr: true,
 		},
@@ -985,28 +979,29 @@ func TestSaveImageCases(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockFS := new(MockFSOps)
-			tc.setupMocks(mockFS)
+			mockFile := new(MockOSFile)
+			mockFile.On("Close").Return(nil)
+			mockFile.On("Name").Return("/tmp/mockfile")
 
-			origMkdirTemp := MkdirTempFunc
-			origCreate := CreateFunc
+			tc.setupMocks(mockFS, mockFile)
+
+			origCreateTempFunc := CreateTempFunc
 			origCopy := CopyFunc
 			origRename := RenameFunc
-			origRemoveAll := RemoveAllFunc
+			origRemove := RemoveFunc
 
 			defer func() {
-				MkdirTempFunc = origMkdirTemp
-				CreateFunc = origCreate
+				CreateTempFunc = origCreateTempFunc
 				CopyFunc = origCopy
 				RenameFunc = origRename
-				RemoveAllFunc = origRemoveAll
+				RemoveFunc = origRemove
 			}()
 
 			// Inject mocks into your saveImage logic
-			MkdirTempFunc = mockFS.MkdirTemp
-			CreateFunc = mockFS.Create
+			CreateTempFunc = mockFS.CreateTemp
 			CopyFunc = mockFS.Copy
 			RenameFunc = mockFS.Rename
-			RemoveAllFunc = mockFS.RemoveAll
+			RemoveFunc = mockFS.Remove
 
 			resp := NewMockResponse(testImage, http.StatusOK)
 			imagePath := "mockimage.jpg"
@@ -1019,7 +1014,7 @@ func TestSaveImageCases(t *testing.T) {
 			}
 
 			if tc.assertions != nil {
-				tc.assertions(t, mockFS)
+				tc.assertions(t, mockFS, mockFile)
 			}
 		})
 	}
