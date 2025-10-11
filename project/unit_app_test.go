@@ -181,7 +181,7 @@ func TestGetImageCases(t *testing.T) {
 			expectErr:            false,
 		},
 		{
-			name: "success image in grace period",
+			name: "success image in grace period image being refreshed",
 			setupMocks: func(m *MockFileReader) {
 				m.On("ReadFile", "mockimage.jpg").Return(testImage, nil)
 			},
@@ -242,7 +242,12 @@ func TestGetImageCases(t *testing.T) {
 			origReadFile := ReadFileFunc
 			ReadFileFunc = mockReader.ReadFile
 			defer func() { ReadFileFunc = origReadFile }()
+			// Calculate image age
+			imageAge := time.Since(tc.imageFetchedAt)
+
+			// Set up app state for the test case
 			app.ImageFetchedFromBackendAt = tc.imageFetchedAt // Ensure the image is fresh
+			app.IsFetchingImageFromBackend = imageAge > app.MaxAge
 
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
@@ -252,7 +257,7 @@ func TestGetImageCases(t *testing.T) {
 
 			// Check if grace period usage is updated correctly
 			if !tc.isGracePeriodUsed {
-				if tc.imageFetchedAt.Before(time.Now().Add(-app.MaxAge)) {
+				if imageAge > app.MaxAge {
 					assert.True(t, app.IsGracePeriodUsed, "Grace period should be marked as used")
 				} else {
 					assert.False(t, app.IsGracePeriodUsed, "Grace period should not be marked as used")
@@ -770,24 +775,6 @@ func TestTryFetchImageCases(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name: "success already fetching",
-			setupApp: func() *App {
-				app.IsFetchingImageFromBackend = true
-				app.FetchImageTimeout = 20 * time.Second
-				return app
-			},
-			setupMocks: func(m *MockApp) {
-				// No calls expected
-			},
-			assertions: func(t *testing.T, m *MockApp) {
-				m.AssertNumberOfCalls(t, "FetchImage", 0)
-				m.AssertNumberOfCalls(t, "RetryWithFibonacci", 0)
-				m.AssertExpectations(t)
-				assert.True(t, app.IsFetchingImageFromBackend, "IsFetchingImage should remain true")
-			},
-			expectErr: false,
-		},
-		{
 			name: "fail fetch",
 			setupApp: func() *App {
 				app.IsFetchingImageFromBackend = false
@@ -825,7 +812,7 @@ func TestTryFetchImageCases(t *testing.T) {
 
 			ctx := context.Background()
 
-			err := tryFetchImage(ctx, tc.setupApp())
+			err := tryFetchImageFromBackend(ctx, tc.setupApp())
 			if tc.expectErr {
 				assert.Error(t, err, "tryFetchImage should return an error")
 			} else {

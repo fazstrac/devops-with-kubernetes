@@ -1,30 +1,13 @@
 package main
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
-
-type AppConfig struct {
-	MaxAge       time.Duration
-	GracePeriod  time.Duration
-	FetchTimeout time.Duration
-}
-
-type testCase struct {
-	name                   string
-	backendHTTPHandlerFunc http.HandlerFunc
-	initialFile            []byte
-	expectedHTTPCode       int
-	expectErr              bool
-}
 
 // Test application's endpoints. Mock only the backend server
 // Uses httptest.Server to mock backend image server, file system operations are not mocked
@@ -230,26 +213,6 @@ func TestIntegrationGetImageCases3(t *testing.T) {
 	close(backendServerOrcherstrator)
 }
 
-func setupTestServer(handler http.HandlerFunc, initialFile []byte) (*httptest.Server, string, context.Context, context.CancelFunc, *sync.WaitGroup) {
-	var wg sync.WaitGroup
-	ctx, cancel := context.WithCancel(context.Background())
-	ts := httptest.NewServer(handler)
-	dir, _ := os.MkdirTemp(os.TempDir(), "test_startup_*")
-	if initialFile != nil {
-		os.WriteFile(dir+"/image.jpg", initialFile, 0644)
-	}
-
-	return ts, dir, ctx, cancel, &wg
-}
-
-func teardownTestServer(ts *httptest.Server, app *App, dir string, cancel context.CancelFunc, wg *sync.WaitGroup) {
-	cancel()
-	wg.Wait()
-	ts.Close()
-	os.RemoveAll(dir)
-	close(app.HeartbeatChan)
-}
-
 // Runs the integration test for a given test case for cases that do not test grace period logic
 func runIntegrationTest1(t *testing.T, tc testCase, appConfig AppConfig, testImages [][]byte, endpoint string) {
 	ts, dir, ctx, cancel, wg := setupTestServer(tc.backendHTTPHandlerFunc, tc.initialFile)
@@ -262,15 +225,8 @@ func runIntegrationTest1(t *testing.T, tc testCase, appConfig AppConfig, testIma
 		appConfig.FetchTimeout,
 	)
 
-	fetchStatusChan := make(chan FetchResult)
-
-	wg.Add(1)
-	go app.ImageFetcher(ctx, fetchStatusChan, wg)
-
-	var fetchStatus FetchResult
-
-	// Block until the cache load is complete
-	fetchStatus = <-fetchStatusChan
+	fetchStatus, fetchStatusChan := app.StartBackgroundImageFetcher(ctx, wg)
+	assert.NoError(t, fetchStatus.Err)
 
 	// Check image cache status
 	// On cold start, image should not be available initially
@@ -329,14 +285,8 @@ func runIntegrationTest2(t *testing.T, tc testCase, appConfig AppConfig, testIma
 		appConfig.FetchTimeout,
 	)
 
-	fetchStatusChan := make(chan FetchResult)
-	wg.Add(1)
-	go app.ImageFetcher(ctx, fetchStatusChan, wg)
-
-	var fetchStatus FetchResult
-
-	// Block until the cache load is complete
-	fetchStatus = <-fetchStatusChan
+	fetchStatus, fetchStatusChan := app.StartBackgroundImageFetcher(ctx, wg)
+	assert.NoError(t, fetchStatus.Err)
 
 	// Check image cache status
 	// On cold start, image should not be available initially

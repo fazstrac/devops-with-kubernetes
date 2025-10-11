@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -28,32 +29,40 @@ func main() {
 		30*time.Second,               // Timeout for fetching the image from the backend
 	)
 
-	// Check if the image is cached from previous runs
-	// and that it is still valid
-	imageAvailable, err := app.LoadCachedImage()
-	if !imageAvailable {
-		fmt.Println("No cached image found, will fetch a new one:", err)
+	wg := sync.WaitGroup{}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start the background image fetcher
+	// It will return if LoadCachedImage fails for any reason
+	ret, fetchStatusChan := app.StartBackgroundImageFetcher(ctx, &wg)
+	if ret.Err != nil {
+		fmt.Println("Failed to start background image fetcher:", ret.Err)
+		panic("Failed to start background image fetcher")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	fetchStatusChan := make(chan FetchResult)
-	wg := sync.WaitGroup{}
-	app.HeartbeatChan = make(chan struct{})
-	wg.Add(1)
-	go app.ImageFetcher(ctx, fetchStatusChan, &wg)
+	if !ret.ImageAvailable {
+		// On cold start, trigger the first image fetch
+		app.HeartbeatChan <- struct{}{}
 
-	app.StartPeriodicRefetchTrigger(ctx, &wg)
+		// Wait for the first image fetch result
+		log.Println("Waiting for initial image fetch result...")
+		fetchStatus := <-fetchStatusChan
+
+		if fetchStatus.Err != nil {
+			log.Println("Initial image fetch failed:", fetchStatus.Err)
+			panic("Initial image fetch failed")
+		}
+	}
+
+	// Start the application heartbeat
+	// Currently used only to trigger periodic image refetches
+	ticker := app.StartPeriodicRefetchTrigger(ctx, &wg)
+
 	defer func() {
+		ticker.Stop()
 		cancel()
 		wg.Wait()
 	}()
-
-	fetchStatus := <-fetchStatusChan
-
-	if fetchStatus.Err != nil {
-		fmt.Println("Initial image fetch failed:", fetchStatus.Err)
-		panic("Initial image fetch failed")
-	}
 
 	// Setup Gin router and routes
 	router := setupRouter(app)
