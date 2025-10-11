@@ -13,7 +13,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type concurrencyTestRunner func(t *testing.T, tc testCase, appConfig AppConfig, testImages [][]byte, endpoint string, backendServerOrchestratorChan chan int)
+type concurrencyTestRunner func(
+	t *testing.T, tc testCase, appConfig AppConfig,
+	testImages [][]byte, endpoint string,
+	backendServerOrchestratorChan chan int, numParallelRequests int,
+)
 
 func TestConcurrentImageRequests(t *testing.T) {
 	testImages := [][]byte{
@@ -69,14 +73,17 @@ func TestConcurrentImageRequests(t *testing.T) {
 	for _, tc := range testCases {
 		for i, runTest := range testRunners {
 			t.Run(tc.name+" test runner "+strconv.Itoa(i), func(t *testing.T) {
-				runTest(t, tc, appConfig, testImages, endpoint, backendServerOrchestratorChan)
+				runTest(
+					t, tc, appConfig, testImages, endpoint,
+					backendServerOrchestratorChan, 15,
+				)
 			})
 		}
 	}
 }
 
 // Runs the integration test for a given test case for cases that do not test grace period logic
-func runIntegrationConcurrencyTest1(t *testing.T, tc testCase, appConfig AppConfig, _ [][]byte, endpoint string, backendServerOrchestratorChan chan int) {
+func runIntegrationConcurrencyTest1(t *testing.T, tc testCase, appConfig AppConfig, _ [][]byte, endpoint string, backendServerOrchestratorChan chan int, numParallelRequests int) {
 	ts, dir, ctx, cancel, wg := setupTestServer(tc.backendHTTPHandlerFunc, tc.initialFile)
 
 	app := NewApp(
@@ -110,10 +117,9 @@ func runIntegrationConcurrencyTest1(t *testing.T, tc testCase, appConfig AppConf
 	startGoRoutinesChan := make(chan struct{}, 1)
 
 	var request_wg sync.WaitGroup
-	numParallelRequests := 10
 
 	// Start multiple goroutines to make concurrent requests
-	for i := 0; i < numParallelRequests; i++ {
+	for range numParallelRequests {
 		request_wg.Add(1)
 		go func() {
 			defer request_wg.Done()
@@ -156,13 +162,13 @@ func runIntegrationConcurrencyTest1(t *testing.T, tc testCase, appConfig AppConf
 
 // Run the concurrency test for cases that test grace period logic
 // Only one goroutine should receive the old image, others should receive the new image
-func runIntegrationConcurrencyTest2(t *testing.T, tc testCase, appConfig AppConfig, testImages [][]byte, endpoint string, backendServerOrchestratorChan chan int) {
+func runIntegrationConcurrencyTest2(t *testing.T, tc testCase, appConfig AppConfig, testImages [][]byte, endpoint string, backendServerOrchestratorChan chan int, numParallelRequests int) {
 	ts, dir, ctx, cancel, wg := setupTestServer(tc.backendHTTPHandlerFunc, tc.initialFile)
 
 	type fetchedImageResult struct {
 		ImageData   []byte
 		HTTPStatus  int
-		GoRoutineID int
+		GoroutineID int
 	}
 
 	app := NewApp(
@@ -194,7 +200,6 @@ func runIntegrationConcurrencyTest2(t *testing.T, tc testCase, appConfig AppConf
 	imageAvailable := fetchStatus.ImageAvailable
 
 	var request_wg sync.WaitGroup
-	numParallelRequests := 10
 
 	// Channel to signal goroutines to start
 	startGoRoutinesChan := make(chan struct{}, 1)
@@ -202,14 +207,14 @@ func runIntegrationConcurrencyTest2(t *testing.T, tc testCase, appConfig AppConf
 	fetchedImageResultsChan := make(chan fetchedImageResult, numParallelRequests)
 
 	// Start multiple goroutines to make concurrent requests
-	for i := 0; i < numParallelRequests; i++ {
+	for i := range numParallelRequests {
 		request_wg.Add(1)
 		go func() {
 			defer request_wg.Done()
 			// wait until signaled to start
 			<-startGoRoutinesChan
 			// random short delay to better simulate real-world concurrent requests
-			time.Sleep(time.Duration(200+rand.Intn(200)) * time.Millisecond)
+			time.Sleep(time.Duration(100+rand.Intn(500)) * time.Millisecond)
 			// Make the request
 			req := httptest.NewRequest("GET", endpoint, nil)
 			w := httptest.NewRecorder()
@@ -217,7 +222,7 @@ func runIntegrationConcurrencyTest2(t *testing.T, tc testCase, appConfig AppConf
 			// assert.Equal(t, http.StatusOK, w.Code)
 			fetchedImageResultsChan <- fetchedImageResult{
 				ImageData:   w.Body.Bytes(),
-				GoRoutineID: i,
+				GoroutineID: i,
 				HTTPStatus:  w.Code,
 			}
 		}()
@@ -241,7 +246,10 @@ func runIntegrationConcurrencyTest2(t *testing.T, tc testCase, appConfig AppConf
 	}
 
 	// make image stale
+	app.mutex.Lock()
 	app.ImageFetchedFromBackendAt = time.Now().Add(-app.MaxAge).Add(-1 * time.Second)
+	app.mutex.Unlock()
+
 	// Release the hounds of war
 	close(startGoRoutinesChan)
 	// Trigger image fetch from backend
@@ -251,17 +259,30 @@ func runIntegrationConcurrencyTest2(t *testing.T, tc testCase, appConfig AppConf
 	imageIndex = (imageIndex + 1) % len(testImages)
 	backendServerOrchestratorChan <- imageIndex
 
+	staleCount, newCount, errorCount := 0, 0, 0
 	for range numParallelRequests {
 		fetchResult := <-fetchedImageResultsChan
 		assert.NotNil(t, fetchResult.ImageData)
-		fmt.Println("Goroutine ", fetchResult.GoRoutineID, " fetched image ", string(fetchResult.ImageData))
+
+		switch {
+		case fetchResult.HTTPStatus == http.StatusOK && string(fetchResult.ImageData) == string(testImages[0]):
+			staleCount++
+		case fetchResult.HTTPStatus == http.StatusOK && string(fetchResult.ImageData) == string(testImages[1]):
+			newCount++
+		case fetchResult.HTTPStatus != http.StatusOK:
+			errorCount++
+		default:
+			fmt.Println("Received unexpected image data:", string(fetchResult.ImageData))
+			t.Fail()
+		}
 	}
+
+	assert.Equal(t, 1, staleCount, "Only one request should receive the stale image")
+	assert.True(t, newCount+errorCount == numParallelRequests-1, "Others should get new image or 503")
 
 	// Wait for all requests to complete
 	request_wg.Wait()
 	close(fetchedImageResultsChan)
-
-	// TODO assert that only one goroutine received the old image, others received the new image
 
 	// *** Teardown phase ***
 	teardownTestServer(ts, app, dir, cancel, wg)

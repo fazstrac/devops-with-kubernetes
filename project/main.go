@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -14,12 +13,18 @@ import (
 // Type App holds the application state
 // It's defined in app.go
 
+var logger *log.Logger
+
+// Main function to start the server
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 		os.Setenv("PORT", port)
 	}
+
+	logger = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
 
 	app := NewApp(
 		"./cache/image.jpg",          // Path to store the cached image
@@ -34,22 +39,24 @@ func main() {
 
 	// Start the background image fetcher
 	// It will return if LoadCachedImage fails for any reason
-	ret, fetchStatusChan := app.StartBackgroundImageFetcher(ctx, &wg)
-	if ret.Err != nil {
-		fmt.Println("Failed to start background image fetcher:", ret.Err)
+	fetchStatus, fetchStatusChan := app.StartBackgroundImageFetcher(ctx, &wg)
+	if fetchStatus.Err != nil {
+		logger.Fatal("Failed to start background image fetcher:", fetchStatus.Err)
 		panic("Failed to start background image fetcher")
 	}
 
-	if !ret.ImageAvailable {
+	if !fetchStatus.ImageAvailable {
+		logger.Println("Image not available in cache. Waiting for initial fetch...")
 		// On cold start, trigger the first image fetch
 		app.HeartbeatChan <- struct{}{}
 
 		// Wait for the first image fetch result
-		log.Println("Waiting for initial image fetch result...")
+		logger.Println("Waiting for initial image fetch result...")
 		fetchStatus := <-fetchStatusChan
+		logger.Println("Initial image fetch completed.")
 
 		if fetchStatus.Err != nil {
-			log.Println("Initial image fetch failed:", fetchStatus.Err)
+			logger.Println("Initial image fetch failed:", fetchStatus.Err)
 			panic("Initial image fetch failed")
 		}
 	}
@@ -67,7 +74,7 @@ func main() {
 	// Setup Gin router and routes
 	router := setupRouter(app)
 
-	fmt.Println("Server started in port", os.Getenv("PORT"))
+	logger.Println("Server started in port", os.Getenv("PORT"))
 	router.Run("0.0.0.0:" + port)
 }
 
