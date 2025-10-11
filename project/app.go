@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +22,8 @@ type TempFile interface {
 	Name() string
 	// ...other methods you need
 }
+
+var logger *log.Logger
 
 var (
 	COMMIT_SHA string
@@ -278,6 +281,12 @@ func (app *App) StartBackgroundImageFetcher(ctx context.Context, wg *sync.WaitGr
 
 // *** Auxiliary functions ***
 //
+
+func setupLogger() *log.Logger {
+	logger = log.New(os.Stdout, "[DwK-Project] ", log.Ldate|log.Ltime|log.Lshortfile)
+
+	return logger
+}
 
 // Retries the given function with Fibonacci backoff
 // TODO: Add argument to cap the maximum wait time

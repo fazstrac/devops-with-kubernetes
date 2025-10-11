@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -13,8 +12,6 @@ import (
 // Type App holds the application state
 // It's defined in app.go
 
-var logger *log.Logger
-
 // Main function to start the server
 
 func main() {
@@ -24,7 +21,7 @@ func main() {
 		os.Setenv("PORT", port)
 	}
 
-	logger = log.New(os.Stdout, "[DWK-Project] ", log.Ldate|log.Ltime|log.Lshortfile)
+	logger = setupLogger()
 
 	app := NewApp(
 		"./cache/image.jpg",          // Path to store the cached image
