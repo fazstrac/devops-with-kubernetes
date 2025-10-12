@@ -13,22 +13,27 @@ import (
 // It's defined in app.go
 
 // Main function to start the server
-
+// TODO for next iteration: graceful shutdown on SIGTERM/SIGINT
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-		os.Setenv("PORT", port)
+
+	// Default port if not set via environment variable
+	if os.Getenv("PORT") == "" {
+		os.Setenv("PORT", "8080")
+	}
+
+	// Default backend image URL if not set via environment variable
+	if os.Getenv("IMAGE_BACKEND_URL") == "" {
+		os.Setenv("IMAGE_BACKEND_URL", "https://picsum.photos/1200")
 	}
 
 	logger = setupLogger()
 
 	app := NewApp(
-		"./cache/image.jpg",          // Path to store the cached image
-		"https://picsum.photos/1200", // Backend image URL
-		10*time.Minute,               // Max age for the image
-		1*time.Minute,                // Grace period during which the old image can be fetched _once_
-		30*time.Second,               // Timeout for fetching the image from the backend
+		"./cache/image.jpg",            // Path to store the cached image, hardcoded now for simplicity
+		os.Getenv("IMAGE_BACKEND_URL"), // Backend image URL
+		10*time.Minute,                 // Max age for the image
+		1*time.Minute,                  // Grace period during which the old image can be fetched _once_
+		30*time.Second,                 // Timeout for fetching the image from the backend
 	)
 
 	wg := sync.WaitGroup{}
@@ -71,8 +76,8 @@ func main() {
 	// Setup Gin router and routes
 	router := setupRouter(app)
 
-	logger.Println("Server started in port", os.Getenv("PORT"))
-	router.Run("0.0.0.0:" + port)
+	logger.Println("Server starting in port", os.Getenv("PORT"))
+	router.Run("0.0.0.0:" + os.Getenv("PORT"))
 }
 
 func setupRouter(app *App) *gin.Engine {

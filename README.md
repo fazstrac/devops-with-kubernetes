@@ -13,6 +13,7 @@
 - [1.9](https://github.com/fazstrac/devops-with-kubernetes/tree/1.9/pong-app)
 - [1.10](https://github.com/fazstrac/devops-with-kubernetes/tree/1.10/log-output)
 - [1.11](https://github.com/fazstrac/devops-with-kubernetes/tree/1.11/log-output)
+- [1.12](https://github.com/fazstrac/devops-with-kubernetes/tree/1.12/project)
 
 ## Directory structure
 

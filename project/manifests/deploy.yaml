@@ -26,9 +26,21 @@ spec:
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
+          env:
+            - name: PORT
+              value: "8080"
+            - name: IMAGE_BACKEND_URL
+              value: "https://picsum.photos/1200"
           volumeMounts:
             - name: shared-volume
               mountPath: /app/cache
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"              
         - name: debug-app
           image: busybox:1.37.0-musl
           imagePullPolicy: Always
@@ -45,6 +57,13 @@ spec:
           volumeMounts:
             - name: shared-volume
               mountPath: /data
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"              
       volumes:
         - name: shared-volume
           persistentVolumeClaim:
