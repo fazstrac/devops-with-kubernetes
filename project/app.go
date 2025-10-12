@@ -246,7 +246,22 @@ func (app *App) StartBackgroundImageFetcher(ctx context.Context, wg *sync.WaitGr
 				app.mutex.Unlock()
 
 				err = tryFetchImageFromBackend(ctx, app)
-				fetchResultChan <- FetchResult{ImageAvailable: err == nil, Path: app.ImagePath, Err: err}
+
+				result := FetchResult{ImageAvailable: err == nil, Path: app.ImagePath, Err: err}
+
+				// Send the result to the channel, but do not block if the channel is full
+				select {
+				case fetchResultChan <- result:
+					// sent successfully
+				default:
+					// channel full, drop or log
+					// This is normal in production as there is no-one waiting for the result
+					// during normal operation. The channel is mainly for the initial fetch
+					// and for testing purposes. In production, the channel will be full most of the time.
+					// Using channel for notifying the caller of the result is a design choice, and should be
+					// replaced with pub/sub or similar mechanism in a real-world application.
+					// logger.Println("fetchResultChan full, dropping result")
+				}
 
 				// Design choice 4: if fetch failed even after retries, reuse the old image until next fetch
 				// This prevents constant retries if the image URL is down for a long time
