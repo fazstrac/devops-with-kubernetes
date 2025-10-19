@@ -16,7 +16,7 @@
   <img src="/images/image.jpg" alt="Random Image" width="600"/>
 
     <form id="todo-form" action="#" onsubmit="return false;" novalidate>
-      <input id="todo-input" class="todo-input" type="text" name="todo" aria-describedby="char-counter" />
+      <input id="todo-input" class="todo-input" type="text" maxlength="140" name="todo" aria-describedby="char-counter" />
       <button id="todo-send" class="todo-btn" type="submit">Create todo</button>
       <span id="char-counter" class="counter">0 / 140</span>
     </form>
