@@ -112,7 +112,7 @@ func (app *App) LoadCachedImage() (imageAvailable bool, err error) {
 
 func (app *App) GetIndex(c *gin.Context) {
 	c.HTML(http.StatusOK, "index.html", gin.H{
-		"title": "DevOps with Kubernetes - Chapter 2 - Exercise 1.12",
+		"title": "DevOps with Kubernetes - Chapter 2 - Exercise 1.13",
 		"body":  COMMIT_SHA + " (" + COMMIT_TAG + ")",
 	})
 }

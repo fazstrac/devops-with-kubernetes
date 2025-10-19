@@ -1,15 +1,37 @@
-<html>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>{{.title}}</title>
+  <meta charset="UTF-8" />
+  <title>{{.title}}</title>
+  <style>
+    .todo-input { width: 400px; padding: .5rem; }
+    .todo-btn { padding: .5rem 1rem; }
+    .counter { font-size: 0.9rem; color: #666; margin-left: .5rem; }
+    .todos { margin-top: 1rem; list-style: disc; padding-left: 1.5rem; }
+  </style>  
 </head>
 <body>
-    <h1>{{.title}}</h1>
-    <img src="/images/image.jpg" alt="Random Image" width="600"/>
-    <p>Devops with Kubernetes 2025</p>
-    <p><code> Commit ID {{.body}}</code></p>
-</body>
+  <h1>{{.title}}</h1>
 
+  <img src="/images/image.jpg" alt="Random Image" width="600"/>
+
+    <form id="todo-form" action="#" onsubmit="return false;" novalidate>
+      <input id="todo-input" class="todo-input" type="text" name="todo" aria-describedby="char-counter" />
+      <button id="todo-send" class="todo-btn" type="submit">Create todo</button>
+      <span id="char-counter" class="counter">0 / 140</span>
+    </form>
+
+    <ul id="todo-list" class="todos" aria-live="polite">
+      <!-- hardcoded todos -->
+      <li>Buy groceries</li>
+      <li>Read chapter 3 of the Kubernetes book</li>
+      <li>Push tag 1.13 for exercise 1.13</li>
+    </ul>
+
+  <p>Devops with Kubernetes 2025</p>
+  <p><code> Commit ID {{.body}}</code></p>
+
+
+<script src="static/frontend.js"></script>
+</body>
 </html>
