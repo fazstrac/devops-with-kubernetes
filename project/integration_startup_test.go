@@ -26,7 +26,7 @@ func TestSetupRouter(t *testing.T) {
 	)
 	router := setupRouter(app)
 
-	assert.Equal(t, 2, len(router.Routes())) // We have two routes defined
+	assert.Equal(t, 4, len(router.Routes())) // We have four routes defined
 	assert.NotNil(t, router)
 }
 
