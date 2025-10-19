@@ -86,6 +86,8 @@ func setupRouter(app *App) *gin.Engine {
 
 	router.GET("/", app.GetIndex)
 	router.GET("/images/image.jpg", app.GetImage)
+	router.Static("/static", "./static")
+
 	// Add more routes here, using app methods
 	return router
 }
