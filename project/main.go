@@ -1,43 +1,91 @@
 package main
 
 import (
-	"fmt"
-	"net/http"
+	"context"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-var (
-	// COMMIT_ID is the commit ID of the code
-	COMMIT_SHA string
-	COMMIT_TAG string
-)
+// Type App holds the application state
+// It's defined in app.go
 
+// Main function to start the server
+// TODO for next iteration: graceful shutdown on SIGTERM/SIGINT
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-		os.Setenv("PORT", port)
+
+	// Default port if not set via environment variable
+	if os.Getenv("PORT") == "" {
+		os.Setenv("PORT", "8080")
 	}
 
-	router := setupRouter()
-	fmt.Println("Server started in port", os.Getenv("PORT"))
-	router.Run("0.0.0.0:" + port)
+	// Default backend image URL if not set via environment variable
+	if os.Getenv("IMAGE_BACKEND_URL") == "" {
+		os.Setenv("IMAGE_BACKEND_URL", "https://picsum.photos/1200")
+	}
+
+	logger = setupLogger()
+
+	app := NewApp(
+		"./cache/image.jpg",            // Path to store the cached image, hardcoded now for simplicity
+		os.Getenv("IMAGE_BACKEND_URL"), // Backend image URL
+		10*time.Minute,                 // Max age for the image
+		1*time.Minute,                  // Grace period during which the old image can be fetched _once_
+		30*time.Second,                 // Timeout for fetching the image from the backend
+	)
+
+	wg := sync.WaitGroup{}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start the background image fetcher
+	// It will return if LoadCachedImage fails for any reason
+	fetchStatus, fetchStatusChan := app.StartBackgroundImageFetcher(ctx, &wg)
+	if fetchStatus.Err != nil {
+		logger.Fatal("Failed to start background image fetcher:", fetchStatus.Err)
+		panic("Failed to start background image fetcher")
+	}
+
+	if !fetchStatus.ImageAvailable {
+		logger.Println("Image not available in cache. Waiting for initial fetch...")
+		// On cold start, trigger the first image fetch
+		app.HeartbeatChan <- struct{}{}
+
+		// Wait for the first image fetch result
+		logger.Println("Waiting for initial image fetch result...")
+		fetchStatus := <-fetchStatusChan
+		logger.Println("Initial image fetch completed.")
+
+		if fetchStatus.Err != nil {
+			logger.Println("Initial image fetch failed:", fetchStatus.Err)
+			panic("Initial image fetch failed")
+		}
+	}
+
+	// Start the application heartbeat
+	// Currently used only to trigger periodic image refetches
+	ticker := app.StartPeriodicRefetchTrigger(ctx, &wg)
+
+	defer func() {
+		ticker.Stop()
+		cancel()
+		wg.Wait()
+	}()
+
+	// Setup Gin router and routes
+	router := setupRouter(app)
+
+	logger.Println("Server starting in port", os.Getenv("PORT"))
+	router.Run("0.0.0.0:" + os.Getenv("PORT"))
 }
 
-func setupRouter() *gin.Engine {
+func setupRouter(app *App) *gin.Engine {
 	router := gin.Default()
 	router.LoadHTMLGlob("templates/*")
 
-	router.GET("/", getIndex)
-	// Add more routes here as needed
+	router.GET("/", app.GetIndex)
+	router.GET("/images/image.jpg", app.GetImage)
+	// Add more routes here, using app methods
 	return router
-}
-
-func getIndex(c *gin.Context) {
-	c.HTML(http.StatusOK, "index.html", gin.H{
-		"title": "DevOps with Kubernetes - Chapter 2 - Exercise 1.8",
-		"body":  COMMIT_SHA + " (" + COMMIT_TAG + ")",
-	})
 }
