@@ -50,5 +50,4 @@ jobs:
           echo "Pushing application: $APP."
           podman login ${{ vars.PUB_REGISTRY_URL }} --username ${{ vars.PUB_REGISTRY_USER }} --password ${{ secrets.PUB_REGISTRY_TOKEN }}
           podman push  ${{ vars.PUB_REGISTRY_URL }}/${APP}:latest && \
-          podman push  ${{ vars.PUB_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} && \
           podman push  ${{ vars.PUB_REGISTRY_URL }}/${APP}:${COMMIT_TAG}

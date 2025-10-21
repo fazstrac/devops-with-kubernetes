@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: pong-app
-          image: ghcr.io/fazstrac/dwk-pong-app:rel-1-11
+          image: forge.fudwin.xyz:8443/sami/dwk-pong-app:dev-exercise-2p1
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -29,24 +29,13 @@ spec:
           volumeMounts:
             - name: shared-volume
               mountPath: /data
-        - name: debug-app
-          image: busybox:1.37.0-musl
-          imagePullPolicy: Always
-          command: [ "sleep", "86400"]
-          securityContext:
-            runAsUser: 1000
-            runAsGroup: 1000
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-            runAsNonRoot: true
-            seccompProfile:
-              type: RuntimeDefault
-          volumeMounts:
-            - name: shared-volume
-              mountPath: /data
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"                            
       volumes:
         - name: shared-volume
-          persistentVolumeClaim:
-            claimName: log-pong-pvc
-
+          emptyDir: {}

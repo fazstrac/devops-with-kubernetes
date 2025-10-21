@@ -15,7 +15,7 @@ var (
 	COMMIT_SHA   string
 	COMMIT_TAG   string
 	counter      int
-	counterMutex sync.Mutex // Mutex to protect counter access
+	counterMutex sync.RWMutex // Mutex to protect counter access
 )
 
 func main() {
@@ -48,6 +48,12 @@ func setupRouter(fname string) *gin.Engine {
 
 	router.GET("/pingpong", func(c *gin.Context) {
 		c.String(http.StatusOK, incrCounter(fname))
+	})
+	router.GET("/pongs", func(c *gin.Context) {
+		counterMutex.RLock()
+		value := strconv.Itoa(counter)
+		counterMutex.RUnlock()
+		c.String(http.StatusOK, value)
 	})
 	return router
 }
