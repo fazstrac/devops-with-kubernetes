@@ -1,5 +1,14 @@
 This repository contains small Go web services and Kubernetes manifests used for exercises in "DevOps with Kubernetes". The guidance below helps an AI coding assistant be immediately productive when editing, adding features, or fixing bugs in this codebase.
 
+This repository is intentionally a learning-oriented course project for "DevOps with Kubernetes." The maintainer's primary goal is to learn production-minded best practices for Kubernetes, CI/CD, and service design while practising idiomatic Go (Golang) for backend services and JavaScript for the small frontend pieces. When making changes, prefer clear, teachable, and correct solutions that demonstrate realistic operational concerns (build args, container images, PVCs, sensible timeouts and retries). When proposing changes that affect production hardness (security, distributed locking, or storage migrations), explicitly call out tradeoffs and list follow-up steps the maintainer should take.
+
+Learning goals & constraints
+- Primary intent: this is a course project to learn DevOps with Kubernetes. Prioritize clarity and explainability over premature optimization.
+- Languages: focus on idiomatic Go for backend services and minimal JavaScript for frontend examples. When you change code, prefer small, well-explained edits with tests and comments.
+- Operational focus: include simple, realistic operational behavior (Containerfiles/ldflags, PVC usage, timeouts/retries). When proposing large or risky production changes (distributed locking, persistent stores, concurrent file locking), present two alternatives with tradeoffs and mark them as follow-up work.
+- Learning preference: the maintainer prefers to try solving problems by themselves first; offer hints, references, and incremental guidance rather than full solutions on the first pass. If the maintainer explicitly asks for a full implementation, provide it, but label larger changes clearly as teaching examples vs production-ready.
+- Tests & reproducibility: ensure tests remain runnable locally (document timeouts or env needed), and prefer small unit tests + one integration test over monolithic changes.
+
 High-level architecture
 - There are three main apps in top-level directories: `project`, `pong-app`, and `log-output`.
   - `project` is the course project (exercise 1.13). It is a Gin-based web server that serves an HTML index and a cached backend image. Key files: `project/app.go`, `project/main.go`, `project/templates/index.html`, `project/static/frontend.js`.
