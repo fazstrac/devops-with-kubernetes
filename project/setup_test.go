@@ -2,17 +2,33 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"sync"
 	"testing"
 	"time"
+	"io"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestMain(m *testing.M) {
-	// global setup (e.g., logger)
-	logger := setupLogger()
+	// global setup: run Gin in release mode and silence the package logger to reduce
+	// noisy test output. Tests still validate behavior but will be quieter.
+	gin.SetMode(gin.ReleaseMode)
+	// assign to package-level logger (do not shadow)
+	logger = setupLogger()
+	// Silence logger output during tests; individual tests may re-enable if needed
+	logger.SetOutput(io.Discard)
+	// Also silence Gin's default writers to prevent request logging during tests
+	gin.DefaultWriter = io.Discard
+	gin.DefaultErrorWriter = io.Discard
+	// Ensure package-level logger variable is set to a discarded-output logger so
+	// any later calls that recreate or reference it are quiet.
+	pkgLogger := log.New(io.Discard, "[DwK-Project] ", log.Ldate|log.Ltime|log.Lshortfile)
+	logger = pkgLogger
 	_ = logger // use as needed
 
 	code := m.Run()

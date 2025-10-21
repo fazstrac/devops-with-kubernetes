@@ -27,3 +27,39 @@ High-level view:
 ├── project     # The course project
 └── README.md   # This files
 ```
+
+## Running tests
+
+- The `project` package contains integration and retry/backoff tests that intentionally wait. Run its tests with an extended timeout to avoid spurious failures:
+
+	```bash
+	cd project
+	go test -v ./... -timeout 2m
+	```
+
+- Quick per-module commands (from repo root):
+
+	```bash
+	cd project && go test -v ./... -timeout 2m
+	cd pong-app && go test ./...
+	cd log-output/app1 && go test ./...
+	cd log-output/app2 && go test ./...
+	```
+
+- Optional Makefile snippet to standardize test runs (add to repo root as `Makefile`):
+
+	```makefile
+	.PHONY: test-all test-project test-pong test-log
+
+	test-project:
+	cd project && go test -v ./... -timeout 2m
+
+	test-pong:
+	cd pong-app && go test ./...
+
+	test-log:
+	cd log-output/app1 && go test ./... && cd - >/dev/null || true
+	cd log-output/app2 && go test ./... && cd - >/dev/null || true
+
+	test-all: test-project test-pong test-log
+	```
