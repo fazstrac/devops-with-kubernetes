@@ -7,6 +7,7 @@ FROM golang:1.24-alpine AS builder
 
 ARG COMMIT_SHA
 ARG COMMIT_TAG
+ARG DEBUG=false
 
 WORKDIR /log_app
 
@@ -18,9 +19,12 @@ RUN go mod download
 COPY . .
 
 # Build the Go app (static binary)
-RUN CGO_ENABLED=0 GOOS=linux go build \
-  -ldflags "-X main.COMMIT_SHA=${COMMIT_SHA} -X main.COMMIT_TAG=${COMMIT_TAG}" \
-  -o server main.go
+RUN CGO_ENABLED=0 GOOS=linux sh -c '\
+  LDFLAGS="-X main.COMMIT_SHA=${COMMIT_SHA} -X main.COMMIT_TAG=${COMMIT_TAG}"; \
+  if [ "${DEBUG}" != "true" ]; then \
+    LDFLAGS="-s -w -buildid= ${LDFLAGS}"; \
+  fi; \
+  go build -trimpath -ldflags "$LDFLAGS" -o server main.go'
 
 # Final stage: distroless
 FROM scratch

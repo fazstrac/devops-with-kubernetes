@@ -1,15 +1,11 @@
-#
-# Containerfile for building a Go application using distroless base image
-# Log Output Application for DevOps with Kubernetes course
-
 # Build stage
-FROM golang:1.24-alpine AS builder
-
-WORKDIR /log_app
+FROM golang:1.24.9-alpine AS builder
 
 ARG COMMIT_SHA
 ARG COMMIT_TAG
 ARG DEBUG=false
+
+WORKDIR /app
 
 # Copy go mod and sum files
 COPY go.mod go.sum ./
@@ -26,12 +22,15 @@ RUN CGO_ENABLED=0 GOOS=linux sh -c '\
   fi; \
   go build -trimpath -ldflags "$LDFLAGS" -o server main.go'
 
-# Final stage: distroless
+
+# Final stage: scratch
 FROM scratch
 USER 1000:1000
+ENV GIN_MODE=release
+
 WORKDIR /app
 
-COPY --from=builder /log_app/server .
+COPY --from=builder /app/server .
 
 # Run the binary
-ENTRYPOINT ["/app/server", "/data/counter.txt"]
+ENTRYPOINT ["/app/server"]

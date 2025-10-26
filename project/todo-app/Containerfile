@@ -3,6 +3,7 @@ FROM golang:1.24-alpine AS builder
 
 ARG COMMIT_SHA
 ARG COMMIT_TAG
+ARG DEBUG=false
 
 WORKDIR /app
 
@@ -14,26 +15,26 @@ RUN go mod download
 COPY . .
 
 # Build the Go app (static binary)
-RUN CGO_ENABLED=0 GOOS=linux go build \
-  -ldflags "-X main.COMMIT_SHA=${COMMIT_SHA} -X main.COMMIT_TAG=${COMMIT_TAG}" \
-  -o server main.go app.go
+RUN CGO_ENABLED=0 GOOS=linux sh -c '\
+  LDFLAGS="-X main.COMMIT_SHA=${COMMIT_SHA} -X main.COMMIT_TAG=${COMMIT_TAG}"; \
+  if [ "${DEBUG}" != "true" ]; then \
+    LDFLAGS="-s -w -buildid= ${LDFLAGS}"; \
+  fi; \
+  go build -trimpath -ldflags "$LDFLAGS" -o server main.go app.go'
 
 # Create a cache directory for the app. Possibly can be replaced with a volume
 RUN mkdir -p /app/cache
 
-# Final stage: distroless
-# Possibly can be replaced with FROM scratch
-FROM gcr.io/distroless/static-debian12
+# Final stage: scratch
+FROM scratch
 USER 1000:1000
 ENV GIN_MODE=release
-
 
 WORKDIR /app
 
 COPY --from=builder /app/server .
 COPY --from=builder --chown=1000:1000 /app/cache /app/cache
 COPY --from=builder /app/templates /app/templates
-
 
 # Run the binary
 ENTRYPOINT ["/app/server"]

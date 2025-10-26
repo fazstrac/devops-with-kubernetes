@@ -15,7 +15,7 @@ jobs:
     runs-on: linux_amd64
     strategy:
       matrix:
-        app: [log-output/app1, log-output/app2, pong-app, project]
+        app: [log-output/app1, log-output/app2, pong-app, project/todo-backend, project/todo-app]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,7 +24,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.24.8'
+          go-version: '1.24.9'
       - name: Sanitize matrix key
         id: sanitize
         run: |
@@ -57,6 +57,7 @@ jobs:
           podman build \
             --build-arg=COMMIT_SHA=${{ env.FORGEJO_SHA }} \
             --build-arg=COMMIT_TAG=${COMMIT_TAG} \
+            --build-arg=DEBUG=true \
             --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:latest \
             --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} \
             --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:${COMMIT_TAG} .
