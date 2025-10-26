@@ -42,11 +42,11 @@ func main() {
 
 	fmt.Printf("Starting app2 (SHA %s) with files %s.\n", COMMIT_SHA, logFName)
 
-	router := setupRouter(logFName)
+	router := setupRouter(logFName, pongAppSvcUrl)
 	router.Run("0.0.0.0:" + port)
 }
 
-func setupRouter(logFName string) *gin.Engine {
+func setupRouter(logFName string, pongAppUrl string) *gin.Engine {
 	router := gin.Default()
 
 	router.GET("/", func(c *gin.Context) {
@@ -63,7 +63,7 @@ func setupRouter(logFName string) *gin.Engine {
 
 		log_data, err3 := os.ReadFile(logFName)
 
-		response, err4 := http.Get(os.Getenv("PONGAPP_SVC_URL") + "/pongs")
+		response, err4 := http.Get(pongAppUrl)
 
 		if err3 != nil || err4 != nil {
 			c.String(http.StatusInternalServerError, "Error reading file or making HTTP request: %v %v", err3, err4)

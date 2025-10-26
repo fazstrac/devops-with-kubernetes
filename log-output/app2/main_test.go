@@ -32,14 +32,13 @@ func TestMain(m *testing.M) {
 		w.Write([]byte("42"))
 	}))
 	defer mockServer.Close()
-	os.Setenv("PONGAPP_SVC_URL", mockServer.URL)
 
 	os.Setenv("PORT", "8080")
 	gin.SetMode(gin.ReleaseMode)
 	gin.DefaultWriter = io.Discard
 	gin.DefaultErrorWriter = io.Discard
 
-	testRouter = setupRouter(fp.Name())
+	testRouter = setupRouter(fp.Name(), mockServer.URL)
 	os.Exit(m.Run())
 }
 
