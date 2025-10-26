@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,16 +18,27 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic("File1: Failed to create temporary file: " + err.Error())
 	}
-	defer os.Remove(fp.Name())
+	defer func() {
+		os.Remove(fp.Name())
+	}()
 
-	fp2, err2 := os.CreateTemp("/tmp", "log_output_app2_test_*.file2")
-	if err2 != nil {
-		panic("File2: Failed to create temporary file: " + err2.Error())
-	}
-	defer os.Remove(fp2.Name())
+	fp.WriteString("Test log content\n")
+	fp.Sync()
+
+	// Set up a mock server to server counter value
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("42"))
+	}))
+	defer mockServer.Close()
 
 	os.Setenv("PORT", "8080")
-	testRouter = setupRouter(fp.Name(), fp2.Name())
+	gin.SetMode(gin.ReleaseMode)
+	gin.DefaultWriter = io.Discard
+	gin.DefaultErrorWriter = io.Discard
+
+	testRouter = setupRouter(fp.Name(), mockServer.URL)
 	os.Exit(m.Run())
 }
 
@@ -42,4 +54,5 @@ func TestGetLog(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/log", nil)
 	testRouter.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Test log content\nPing / Pongs: 42")
 }
