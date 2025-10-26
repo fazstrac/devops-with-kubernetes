@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.24.9-alpine AS builder
 
 ARG COMMIT_SHA
 ARG COMMIT_TAG
@@ -25,8 +25,8 @@ RUN CGO_ENABLED=0 GOOS=linux sh -c '\
 # Create a cache directory for the app. Possibly can be replaced with a volume
 RUN mkdir -p /app/cache
 
-# Final stage: scratch
-FROM scratch
+# Final stage: distroless for certficates
+FROM gcr.io/distroless/base-debian12
 USER 1000:1000
 ENV GIN_MODE=release
 
@@ -35,6 +35,7 @@ WORKDIR /app
 COPY --from=builder /app/server .
 COPY --from=builder --chown=1000:1000 /app/cache /app/cache
 COPY --from=builder /app/templates /app/templates
+COPY --from=builder /app/static /app/static
 
 # Run the binary
 ENTRYPOINT ["/app/server"]

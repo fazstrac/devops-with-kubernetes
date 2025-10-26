@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: project
+  name: project-todo-app
   namespace: dwk-mooc
   labels:
-    app: project
+    app: project-todo-app
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: project
+      app: project-todo-app
   template:
     metadata:
       labels:
-        app: project
+        app: project-todo-app
     spec:
       containers:
         - name: project-todo-app
-          image: forge.fudwin.xyz:8443/sami/dwk-project-todo-app:exercise-2p2
+          image: forge.fudwin.xyz:8443/sami/dwk-project-todo-app:dev-exercise-2p2
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false

@@ -18,9 +18,9 @@ spec:
                 port:
                   number: 3000
           - path: /todos
-            pathType: Exact
+            pathType: Prefix
             backend:
               service:
-                name: pong-todo-backend-svc
+                name: project-todo-backend-svc
                 port:
                   number: 3000
