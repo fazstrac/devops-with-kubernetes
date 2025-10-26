@@ -41,7 +41,7 @@ spec:
           imagePullPolicy: Always
           env:
             - name: PONGAPP_SVC_URL
-              value: "http://pong-app-svc:8080"
+              value: "http://pong-app-svc:4000/pongs"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -58,7 +58,7 @@ spec:
               memory: "128Mi"
             limits:
               cpu: "500m"
-              memory: "512Mi"              
+              memory: "512Mi"
       volumes:
         - name: shared-volume
           emptyDir: {}
