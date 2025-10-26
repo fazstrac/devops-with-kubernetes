@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: pong-app
-          image: ghcr.io/fazstrac/dwk-pong-app:rel-2p1
+          image: ghcr.io/fazstrac/dwk-pong-app:rel-2-1
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
