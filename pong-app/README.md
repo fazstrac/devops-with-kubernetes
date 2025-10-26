@@ -21,11 +21,10 @@ pong-app
 ├── main_test.go        # Unit tests for the main file
 ├── manifests
 │   ├── deploy.yaml     # Use this to deploy Pong appliction
-│   ├── ingress.yaml    # Defines the Ingress, shared with log-output app -- should be refactored
 │   └── service.yaml    # Defines the Pong app service
 └── README.md           # This file
 ```
 
 ## See also
 
-[Log output app](../log-output) and [Exercise 1.11 in Chapter 2 / Introduction to Storage](https://courses.mooc.fi/org/uh-cs/courses/devops-with-kubernetes/chapter-2/introduction-to-storage)
+[Log output app](../log-output) and [Exercise 2.1 in Chapter 3 / Networking Between Pods](http://courses.mooc.fi/org/uh-cs/courses/devops-with-kubernetes/chapter-3/networking-between-pods)

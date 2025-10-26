@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: pong-app
-          image: forge.fudwin.xyz:8443/sami/dwk-pong-app:dev-exercise-2p1
+          image: ghcr.io/fazstrac/dwk-pong-app:rel-2p1
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -35,7 +35,7 @@ spec:
               memory: "128Mi"
             limits:
               cpu: "500m"
-              memory: "512Mi"                            
+              memory: "512Mi"
       volumes:
         - name: shared-volume
           emptyDir: {}

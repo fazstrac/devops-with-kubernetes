@@ -63,6 +63,13 @@ func setupRouter(logFName string, pongAppUrl string) *gin.Engine {
 
 		log_data, err3 := os.ReadFile(logFName)
 
+		// Very little error handling for the pong app HTTP request
+		// In a production-grade application, you would want to handle
+		// various error scenarios more gracefully.
+		// Should check
+		// - HTTP status codes
+		// - Timeouts
+		// - Retries
 		response, err4 := http.Get(pongAppUrl)
 
 		if err3 != nil || err4 != nil {
@@ -70,6 +77,7 @@ func setupRouter(logFName string, pongAppUrl string) *gin.Engine {
 			return
 		}
 
+		// Expecting a short response, so even 128 bytes is a bit of an overkill
 		buf := make([]byte, 128)
 
 		datalength, err4 := response.Body.Read(buf)
