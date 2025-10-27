@@ -2,15 +2,15 @@
   // Visit https://aka.ms/tsconfig to read more about this file
   "compilerOptions": {
     // File Layout
-    // "rootDir": "./src",
-    "outDir": "./static/js",
+    "rootDir": "./ts",
+    "outDir": "./static/",
 
   // Environment Settings
   // See also https://aka.ms/tsconfig/module
   // Use an ES module output for browser-friendly modules
   "module": "es2020",
   "target": "es2017",
-    "types": [],
+  "types": [],
   // For browser builds, include DOM lib
   "lib": ["dom", "es2017"],
 

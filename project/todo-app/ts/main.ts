@@ -1,14 +1,24 @@
+/* todo-frontend.ts
+ *
+ * This file contains the frontend logic for the Todo application.
+ */
+
 import { fetchTodos, addTodo } from "./todo";
 
-(() => {
-  const input = document.getElementById('todo-input') as HTMLInputElement | null;
-  const send = document.getElementById('todo-send') as HTMLButtonElement | null;
-  const counter = document.getElementById('char-counter') as HTMLElement | null;
-  const list = document.getElementById('todo-list') as HTMLUListElement | null;
+/**
+ * Initialize the Todo frontend wiring.
+ *
+ * @param root - Document root to query elements from (useful for tests)
+ */
+export function initTodoApp(root: Document = document): void {
+  const input = root.getElementById('todo-input') as HTMLInputElement | null;
+  const send = root.getElementById('todo-send') as HTMLButtonElement | null;
+  const counter = root.getElementById('char-counter') as HTMLElement | null;
+  const list = root.getElementById('todo-list') as HTMLUListElement | null;
 
   if (!input || !send || !counter || !list) {
     // Required elements are missing; fail fast in dev but avoid throwing in prod.
-    // Consumers compiling this file can decide how to handle it.
+    // Consumers (or tests) can call initTodoApp with a prepared DOM instead.
     // eslint-disable-next-line no-console
     console.warn('todo frontend: missing required DOM elements');
     return;
@@ -20,6 +30,7 @@ import { fetchTodos, addTodo } from "./todo";
   const counterEl = counter as HTMLElement;
   const listEl = list as HTMLUListElement;
 
+  // max todo length
   const MAX_LEN = 140;
 
   async function loadTodos(): Promise<void> {
@@ -55,7 +66,7 @@ import { fetchTodos, addTodo } from "./todo";
   inputEl.addEventListener('input', updateCounter);
   updateCounter();
 
-  // add todo locally (no server call)
+  // add todo handler
   sendBtn.addEventListener('click', async () => {
     const text = inputEl.value.trim();
     if (!text) return;
@@ -87,4 +98,9 @@ import { fetchTodos, addTodo } from "./todo";
       sendBtn.click();
     }
   });
-})();
+}
+
+// Auto-initialize in a browser environment (preserves previous runtime behavior)
+if (typeof window !== 'undefined') {
+  initTodoApp();
+}
