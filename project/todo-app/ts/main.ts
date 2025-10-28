@@ -3,7 +3,7 @@
  * This file contains the frontend logic for the Todo application.
  */
 
-import { fetchTodos, addTodo } from "./todo";
+import * as api from "./todo-api";
 
 /**
  * Initialize the Todo frontend wiring.
@@ -35,7 +35,7 @@ export function initTodoApp(root: Document = document): void {
 
   async function loadTodos(): Promise<void> {
     try {
-      const todos = await fetchTodos();
+      const todos = await api.fetchTodos();
       todos.forEach(todo => {
         const li = document.createElement('li');
         li.textContent = todo.description;
@@ -77,7 +77,7 @@ export function initTodoApp(root: Document = document): void {
     }
 
     try {
-      const todo = await addTodo(text);
+      const todo = await api.addTodo(text);
       const li = document.createElement('li');
       li.textContent = todo.description;
       listEl.appendChild(li);
@@ -101,6 +101,7 @@ export function initTodoApp(root: Document = document): void {
 }
 
 // Auto-initialize in a browser environment (preserves previous runtime behavior)
-if (typeof window !== 'undefined') {
+// Auto-initialize in a browser environment only if the expected DOM is present.
+if (typeof window !== 'undefined' && document.getElementById('todo-input')) {
   initTodoApp();
 }

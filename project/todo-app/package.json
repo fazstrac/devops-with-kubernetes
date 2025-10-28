@@ -1,14 +1,29 @@
 {
+  "name": "project-todo-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Todo frontend for DevOps with Kubernetes project (TypeScript)",
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jest": "^29.5.3",
     "esbuild": "^0.25.11",
     "eslint": "^9.38.0",
-    "jest": "^30.2.0",
-    "prettier": "^3.6.2"
-  },
-  "dependencies": {
+    "jest": "^29.6.4",
+    "jest-environment-jsdom": "^29.0.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
+  "dependencies": {
+    "typescript": "^5.4.2"
+  },
   "scripts": {
-    "build": "esbuild ts/main.ts --bundle --platform=browser --target=es2017 --outfile=static/frontend.js --minify"
+    "build": "esbuild ts/main.ts --bundle --platform=browser --target=es2017 --outfile=static/frontend.js --minify",
+    "typecheck": "tsc -p ts/tsconfig.json --noEmit",
+    "eslint": "eslint . --ext .ts,.tsx",
+    "test": "jest --config jest.config.cjs --runInBand"
   }
 }
