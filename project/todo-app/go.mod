@@ -1,4 +1,4 @@
-module fazstrac/dwk-project-todo-app
+module fazstrac/project/todo-app
 
 go 1.24.9
 
