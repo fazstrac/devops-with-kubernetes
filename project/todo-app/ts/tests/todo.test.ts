@@ -1,4 +1,4 @@
-import { fetchTodos, addTodo } from '../todo-api';
+import { fetchTodos, addTodo, deleteTodo, updateTodo } from '../todo-api';
 
 describe('todo API helpers', () => {
   beforeEach(() => {
@@ -21,5 +21,22 @@ describe('todo API helpers', () => {
     const res = await addTodo('b');
     expect(res).toEqual(created);
     expect(globalThis.fetch).toHaveBeenCalledWith('/todos', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('deleteTodo sends DELETE request', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true } as any);
+
+    const todoId = '3';
+    await deleteTodo(todoId);
+    expect(globalThis.fetch).toHaveBeenCalledWith(`/todos/${todoId}`, expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('updateTodo sends PUT request and returns updated todo', async () => {
+    const updated = { uuid: '4', description: 'c updated', createdAt: '2025-01-01T00:00:00Z' };
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => updated } as any);
+
+    const res = await updateTodo('4', 'c updated');
+    expect(res).toEqual(updated);
+    expect(globalThis.fetch).toHaveBeenCalledWith('/todos/4', expect.objectContaining({ method: 'PUT' }));
   });
 });

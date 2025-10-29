@@ -49,7 +49,7 @@ jobs:
         if: ${{ matrix.app == 'project/todo-app' }}
         run: |
           cd ${{ matrix.app }}
-          npm ci
+          npx yarn install
       - name: Install GO dependencies
         run: |
           cd ${{ matrix.app }}
@@ -79,6 +79,13 @@ jobs:
             --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:latest \
             --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} \
             --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:${COMMIT_TAG} .
+      - name: Run frontend tests
+        if: ${{ matrix.app == 'project/todo-app' }}
+        run: |
+          set -e
+          cd ${{ matrix.app }}
+          echo "Running frontend tests for ${{ matrix.app }}."
+          npm run test
       - name: Build frontend assets
         if: ${{ matrix.app == 'project/todo-app' }}
         run: |
