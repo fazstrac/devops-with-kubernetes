@@ -42,6 +42,21 @@ jobs:
         run: |
           cd ${{ matrix.app }}
           npx yarn install
+      - name: Run frontend tests
+        if: ${{ matrix.app == 'project/todo-app' }}
+        run: |
+          set -e
+          cd ${{ matrix.app }}
+          echo "Running frontend tests for ${{ matrix.app }}."
+          npm run test
+      - name: Build frontend assets
+        if: ${{ matrix.app == 'project/todo-app' }}
+        run: |
+          set -e
+          cd ${{ matrix.app }}
+          echo "Building frontend assets for ${{ matrix.app }}."
+          npx tsc --noEmit
+          npm run build
       - name: Install GO dependencies
         run: |
           cd ${{ matrix.app }}
@@ -71,21 +86,6 @@ jobs:
             --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:latest \
             --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} \
             --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:${COMMIT_TAG} .
-      - name: Run frontend tests
-        if: ${{ matrix.app == 'project/todo-app' }}
-        run: |
-          set -e
-          cd ${{ matrix.app }}
-          echo "Running frontend tests for ${{ matrix.app }}."
-          npm run test
-      - name: Build frontend assets
-        if: ${{ matrix.app == 'project/todo-app' }}
-        run: |
-          set -e
-          cd ${{ matrix.app }}
-          echo "Building frontend assets for ${{ matrix.app }}."
-          npx tsc --noEmit
-          npm run build
       - name: Push container image
         run: |
           set -e
