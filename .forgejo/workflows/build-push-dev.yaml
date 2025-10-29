@@ -42,7 +42,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ matrix.app }}/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('${{ matrix.app }}/package-lock.json') }}
+          key: ${{ runner.os }}-node-${{ hashFiles('${{ matrix.app }}/yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-node-
       - name: Install Node.js dependencies
