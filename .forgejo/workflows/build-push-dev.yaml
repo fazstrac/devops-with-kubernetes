@@ -28,11 +28,11 @@ jobs:
           COMMIT_TAG=$(echo -n dev-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9\.]\+/-/g')
           echo "safe_name=$SAFE_NAME" >> $FORGEJO_OUTPUT
           echo "commit_tag=$COMMIT_TAG" >> $FORGEJO_OUTPUT
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.24.9'
-      # - name: Setup Node.js
+      # - name: Set up Go
+      #   uses: actions/setup-go@v4
+      #   with:
+      #     go-version: '1.24.9'
+      # # - name: Setup Node.js
       #   if: ${{ matrix.app == 'project/todo-app' }}
       #   uses: actions/setup-node@v3
       #   with:
