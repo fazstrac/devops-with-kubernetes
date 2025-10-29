@@ -104,6 +104,7 @@ jobs:
         with:
           name: artifacts-${{ steps.sanitize.outputs.safe_name }}.zip
           path: ${{ matrix.app }}/artifacts/
+          retention-days: 30
       - name: Cleanup local images
         run: |
           set -e
