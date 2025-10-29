@@ -47,23 +47,25 @@ jobs:
         run: |
           set -e
           cd ${{ matrix.app }}
-          echo "Running frontend tests for ${{ matrix.app }}."
+          echo "Running JS frontend tests for ${{ matrix.app }}."
+          npm run typecheck
           npm run test
       - name: Build frontend assets
         if: ${{ matrix.app == 'project/todo-app' }}
         run: |
           set -e
           cd ${{ matrix.app }}
-          echo "Building frontend assets for ${{ matrix.app }}."
-          npx tsc --noEmit
+          echo "Building JS frontend assets for ${{ matrix.app }}."
           npm run build
       - name: Install GO dependencies
         run: |
           cd ${{ matrix.app }}
+          echo "Installing Go dependencies for ${{ matrix.app }}."
           go mod tidy
       - name: Run GO linter
         run: |
           cd ${{ matrix.app }}
+          echo "Running Go linter for ${{ matrix.app }}."
           go vet ./...
       - name: Run GO tests
         run: |
