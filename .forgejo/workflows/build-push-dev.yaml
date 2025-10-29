@@ -37,14 +37,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '22'
-      - name: Cache Node.js modules
-        if: ${{ matrix.app == 'project/todo-app' }}
-        uses: actions/cache@v3
-        with:
-          path: ${{ matrix.app }}/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('${{ matrix.app }}/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
       - name: Install Node.js dependencies
         if: ${{ matrix.app == 'project/todo-app' }}
         run: |
