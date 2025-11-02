@@ -15,7 +15,7 @@ jobs:
     runs-on: linux_amd64
     strategy:
       matrix:
-        app: [log-output/app1, log-output/app2, pong-app, project/todo-backend, project/todo-app]
+        app: [project/todo-backend, project/todo-app, log-output/app1, log-output/app2, pong-app]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,15 +30,6 @@ jobs:
           echo "safe_name=$SAFE_NAME" >> $FORGEJO_OUTPUT
           echo "commit_tag=$COMMIT_TAG" >> $FORGEJO_OUTPUT
           mkdir -p ${{ matrix.app }}/artifacts && echo "Created artifacts directory for ${{ matrix.app }}."
-      # - name: Set up Go
-      #   uses: actions/setup-go@v4
-      #   with:
-      #     go-version: '1.24.9'
-      # # - name: Setup Node.js
-      #   if: ${{ matrix.app == 'project/todo-app' }}
-      #   uses: actions/setup-node@v3
-      #   with:
-      #     node-version: '22'
       - name: Install Node.js dependencies
         if: ${{ matrix.app == 'project/todo-app' }}
         run: |
@@ -117,3 +108,4 @@ jobs:
           podman image rm ${{ vars.DEV_REGISTRY_URL }}/${APP}:latest || true
           podman image rm ${{ vars.DEV_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} || true
           podman image rm ${{ vars.DEV_REGISTRY_URL }}/${APP}:${COMMIT_TAG} || true
+          podman image prune -f || true

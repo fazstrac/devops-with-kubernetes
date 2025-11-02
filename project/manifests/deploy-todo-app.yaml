@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: project-todo-app
-          image: ghcr.io/fazstrac/dwk-project-todo-app:rel-2-2
+          image: ghcr.io/fazstrac/dwk-project-todo-app:rel-2.2
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false

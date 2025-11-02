@@ -15,7 +15,7 @@ jobs:
     runs-on: linux_amd64
     strategy:
       matrix:
-        app: [log-output/app1, log-output/app2, pong-app, project]
+        app: [project/todo-backend, project/todo-app, log-output/app1, log-output/app2, pong-app]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,6 +28,18 @@ jobs:
           COMMIT_TAG=$(echo -n rel-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9\.]\+/-/g')
           echo "safe_name=$SAFE_NAME" >> $FORGEJO_OUTPUT
           echo "commit_tag=$COMMIT_TAG" >> $FORGEJO_OUTPUT
+      - name: Install Node.js dependencies
+        if: ${{ matrix.app == 'project/todo-app' }}
+        run: |
+          cd ${{ matrix.app }}
+          npx yarn install
+      - name: Build frontend assets
+        if: ${{ matrix.app == 'project/todo-app' }}
+        run: |
+          set -e
+          cd ${{ matrix.app }}
+          echo "Building JS frontend assets for ${{ matrix.app }}."
+          npm run build
       - name: Build application
         run: |
           set -e
@@ -52,3 +64,13 @@ jobs:
           podman login ${{ vars.PUB_REGISTRY_URL }} --username ${{ vars.PUB_REGISTRY_USER }} --password ${{ secrets.PUB_REGISTRY_TOKEN }}
           podman push  ${{ vars.PUB_REGISTRY_URL }}/${APP}:latest && \
           podman push  ${{ vars.PUB_REGISTRY_URL }}/${APP}:${COMMIT_TAG}
+      - name: Cleanup local images
+        run: |
+          set -e
+          APP=${{ steps.sanitize.outputs.safe_name }}
+          COMMIT_TAG=${{ steps.sanitize.outputs.commit_tag }}
+          echo "Removing local images for application: $APP."
+          podman image rm ${{ vars.PUB_REGISTRY_URL }}/${APP}:latest || true
+          podman image rm ${{ vars.PUB_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} || true
+          podman image rm ${{ vars.PUB_REGISTRY_URL }}/${APP}:${COMMIT_TAG} || true
+          podman image prune -f || true
