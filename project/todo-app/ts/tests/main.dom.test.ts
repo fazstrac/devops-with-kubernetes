@@ -1,3 +1,4 @@
+import { describe, it, beforeEach, vi, expect } from 'vitest';
 import { screen } from '@testing-library/dom';
 import { initTodoApp } from '../main';
 import * as api from '../todo-api';
