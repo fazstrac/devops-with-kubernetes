@@ -1,5 +1,23 @@
 # Changelog (recent changes)
 
+## 2025-11-02 — exercise/2p2 — project: UI polish, TS/tests, CI stabilisation and backend API
+
+Summary:
+- Add playful CSS and improve mobile friendliness for the todo UI; convert the index to a responsive, table-based layout and update the frontend population code (`project/todo-app/templates/index.html`, `project/todo-app/static/styles.css`, `project/todo-app/static/frontend.js`).
+- Introduce a TypeScript frontend (`project/ts/*`) with initial unit tests; switch the JS test runner to `vitest`/yarn, fix missing imports and other TS test errors.
+- Reorganise folders to accommodate frontend and `todo-backend` services, add/update `package.json` and `vitest` config to support the new TS tests.
+- Add new endpoint `/todos` (located in `todo-backend`), which supports HTTP verbs GET, POST, PATCH, and DELETE to handle dynamic todos.
+- Improve CI: remove explicit Go/Node setup steps in the workflow to rely on runner images, correct artifact/coverage collection paths, and iterate on CI fixes to stabilise JS+Go coverage reporting.
+- Misc: remove placeholder content from the UI, baseline TypeScript compilation, and several small commits to stabilise builds and tests.
+
+How to verify:
+- Run frontend unit tests: `cd project && yarn && yarn test` (or use the JS test runner configured in the repo).
+- Run Go tests for the project package: `cd project && go test -v ./... -timeout 2m`.
+- Manually exercise the UI/backend locally (see `project/README.md` for run instructions) and verify PATCH/DELETE behaviour against `todo-backend`.
+
+Files changed (not exhaustive):
+- `project/todo-app/templates/index.html`, `project/todo-app/static/styles.css`, `project/todo-app/static/frontend.js`, `project/ts/main.ts`, `project/ts/todo-api.ts`, `project/ts/tests/*`, `project/package.json`, `project/vitest.config.ts`, `project/todo-backend/main.go`, CI workflow and artifact/coverage scripts, assorted test fixes and README updates.
+
 ## 2025-10-26 — exercise/2p1 — log-output & pong-app: app2 integration, tests and manifests
 
 Summary:
