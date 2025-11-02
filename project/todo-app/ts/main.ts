@@ -37,9 +37,16 @@ export function initTodoApp(root: Document = document): void {
     try {
       const todos = await api.fetchTodos();
       todos.forEach(todo => {
-        const li = document.createElement('li');
-        li.textContent = todo.description;
-        listEl.appendChild(li);
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${todo.description}</td>
+          <td>${new Date(todo.created_at).toLocaleString()}</td>
+          <td>
+            <button data-action="edit" data-uuid="${todo.uuid}">Edit</button>
+            <button data-action="delete" data-uuid="${todo.uuid}">Delete</button>
+          </td>
+        `;
+        listEl.appendChild(row);
       });
     } catch (err) {
       // eslint-disable-next-line no-console
