@@ -10,7 +10,7 @@
 export type Todo = {
   uuid: string;
   description: string;
-  createdAt: string;
+  created_at: string;
 };
 
 /* Fetch all todos

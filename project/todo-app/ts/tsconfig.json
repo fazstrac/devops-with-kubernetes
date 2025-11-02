@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "rootDir": "./",
     "outDir": "../static",
-    "types": ["vitest/globals", "node"]
+    "types": []
   },
   "include": ["**/*.ts", "tests/**/*.ts"],
   "exclude": ["node_modules"]

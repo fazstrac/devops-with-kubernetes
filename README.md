@@ -16,51 +16,55 @@
 - [1.12](https://github.com/fazstrac/devops-with-kubernetes/tree/1.12/project)
 - [1.13](https://github.com/fazstrac/devops-with-kubernetes/tree/1.13/project)
 - [2.1](https://github.com/fazstrac/devops-with-kubernetes/tree/2.1/log-output)
+- [2.2](https://github.com/fazstrac/devops-with-kubernetes/tree/2.2/project)
 
-## Directory structure
+## Directory structure (concise)
 
-High-level view:
+Only the most relevant folders and files are listed below. See each subfolder for full contents.
+
 ```
 ├── LICENSE
-├── log-output  # Log application lies here
-├── manifests   # General manifests pertaining to both Log application and Pong-app
-├── pong-app    # Pong-app here
-├── project     # The course project
-└── README.md   # This files
+├── log-output/            # Two small log apps that demonstrate shared storage and readers
+│   ├── app1/main.go       # writer: app1 writes timestamps to shared file
+│   └── app2/main.go       # reader: app2 reads file and calls pong service
+├── manifests/             # Cluster-level manifests (PV/PVC used in some exercises)
+│   ├── log-pong-pv.yaml
+│   └── log-pong-pvc.yaml
+├── pong-app/              # Small counter service used by exercises
+│   ├── main.go
+│   └── Containerfile
+├── project/               # Course project (todo frontend + todo-backend)
+│   ├── manifests/
+│   │   ├── ingress.yaml
+│   │   ├── deploy-todo-app.yaml
+│   │   └── deploy-todo-backend.yaml
+│   ├── todo-app/          # Frontend (TypeScript + Go static server)
+│   │   ├── main.go
+│   │   ├── app.go
+│   │   ├── ts/            # TypeScript sources and tests
+│   │   └── templates/index.html
+│   └── todo-backend/      # In-memory todo API (GET/POST /todos)
+│       └── main.go
+└── README.md              # This file
 ```
 
 ## Running tests
 
-- The `project` package contains integration and retry/backoff tests that intentionally wait. Run its tests with an extended timeout to avoid spurious failures:
+- The `project/todo-app` package contains integration and retry/backoff tests that intentionally wait. Run its tests with an extended timeout to avoid spurious failures:
 
 	```bash
-	cd project
+	cd project/todo-app
 	go test -v ./... -timeout 2m
-	```
+  npm run typecheck
+  npm run test
+  ```
 
 - Quick per-module commands (from repo root):
 
 	```bash
-	cd project && go test -v ./... -timeout 2m
+	cd project/todo-app && go test -v ./... -timeout 2m
+  cd project/todo-backend && go test -v ./...
 	cd pong-app && go test ./...
 	cd log-output/app1 && go test ./...
 	cd log-output/app2 && go test ./...
-	```
-
-- Optional Makefile snippet to standardize test runs (add to repo root as `Makefile`):
-
-	```makefile
-	.PHONY: test-all test-project test-pong test-log
-
-	test-project:
-	cd project && go test -v ./... -timeout 2m
-
-	test-pong:
-	cd pong-app && go test ./...
-
-	test-log:
-	cd log-output/app1 && go test ./... && cd - >/dev/null || true
-	cd log-output/app2 && go test ./... && cd - >/dev/null || true
-
-	test-all: test-project test-pong test-log
 	```
