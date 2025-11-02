@@ -15,39 +15,69 @@ jobs:
     runs-on: linux_amd64
     strategy:
       matrix:
-        app: [log-output/app1, log-output/app2, pong-app, project]
+        app: [log-output/app1, log-output/app2, pong-app, project/todo-backend, project/todo-app]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.24.8'
       - name: Sanitize matrix key
         id: sanitize
         run: |
+          set -e
           SAFE_NAME=$(echo -n dwk-${{ matrix.app }} | sed 's/[^A-Za-z0-9]\+/-/g')
           COMMIT_TAG=$(echo -n dev-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9\.]\+/-/g')
           echo "safe_name=$SAFE_NAME" >> $FORGEJO_OUTPUT
           echo "commit_tag=$COMMIT_TAG" >> $FORGEJO_OUTPUT
-      - name: Install dependencies
+          mkdir -p ${{ matrix.app }}/artifacts && echo "Created artifacts directory for ${{ matrix.app }}."
+      # - name: Set up Go
+      #   uses: actions/setup-go@v4
+      #   with:
+      #     go-version: '1.24.9'
+      # # - name: Setup Node.js
+      #   if: ${{ matrix.app == 'project/todo-app' }}
+      #   uses: actions/setup-node@v3
+      #   with:
+      #     node-version: '22'
+      - name: Install Node.js dependencies
+        if: ${{ matrix.app == 'project/todo-app' }}
         run: |
           cd ${{ matrix.app }}
+          npx yarn install
+      - name: Run frontend tests
+        if: ${{ matrix.app == 'project/todo-app' }}
+        run: |
+          set -e
+          cd ${{ matrix.app }}
+          echo "Running JS frontend tests for ${{ matrix.app }}."
+          npm run typecheck
+          npm run test
+          mv coverage artifacts/js_coverage
+      - name: Build frontend assets
+        if: ${{ matrix.app == 'project/todo-app' }}
+        run: |
+          set -e
+          cd ${{ matrix.app }}
+          echo "Building JS frontend assets for ${{ matrix.app }}."
+          npm run build
+      - name: Install GO dependencies
+        run: |
+          cd ${{ matrix.app }}
+          echo "Installing Go dependencies for ${{ matrix.app }}."
           go mod tidy
-      - name: Run linter
+      - name: Run GO linter
         run: |
           cd ${{ matrix.app }}
+          echo "Running Go linter for ${{ matrix.app }}."
           go vet ./...
-      - name: Run tests
+      - name: Run GO tests
         run: |
           cd ${{ matrix.app }}
-          mkdir -p artifacts
           APP=${{ steps.sanitize.outputs.safe_name }}
           COVERAGE_FILE=artifacts/coverage-${APP}.out
           go test -coverprofile ${COVERAGE_FILE} ./...
-      - name: Build application
+          go tool cover -html=${COVERAGE_FILE} -o artifacts/go_coverage.html
+      - name: Build GO application
         run: |
           set -e
           cd ${{ matrix.app }}
@@ -57,6 +87,7 @@ jobs:
           podman build \
             --build-arg=COMMIT_SHA=${{ env.FORGEJO_SHA }} \
             --build-arg=COMMIT_TAG=${COMMIT_TAG} \
+            --build-arg=DEBUG=true \
             --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:latest \
             --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} \
             --tag ${{ vars.DEV_REGISTRY_URL }}/${APP}:${COMMIT_TAG} .
@@ -76,6 +107,7 @@ jobs:
         with:
           name: artifacts-${{ steps.sanitize.outputs.safe_name }}.zip
           path: ${{ matrix.app }}/artifacts/
+          retention-days: 30
       - name: Cleanup local images
         run: |
           set -e

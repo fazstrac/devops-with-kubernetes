@@ -1,2 +1,7 @@
-project/COMMIT_SHA
-project/cache/image.jpg
+**/COMMIT_SHA
+**/cache/
+**/node_modules/
+**/node_modules/.cache
+**/static/frontend.js
+**/coverage.out
+**/coverage/

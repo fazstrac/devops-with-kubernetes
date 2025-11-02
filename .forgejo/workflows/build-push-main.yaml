@@ -38,6 +38,7 @@ jobs:
           podman build \
             --build-arg=COMMIT_SHA=${{ env.FORGEJO_SHA }} \
             --build-arg=COMMIT_TAG=${COMMIT_TAG} \
+            --build-arg=DEBUG=false \
             --tag ${{ vars.PUB_REGISTRY_URL }}/${APP}:latest \
             --tag ${{ vars.PUB_REGISTRY_URL }}/${APP}:${{ env.FORGEJO_SHA }} \
             --tag ${{ vars.PUB_REGISTRY_URL }}/${APP}:${COMMIT_TAG} .

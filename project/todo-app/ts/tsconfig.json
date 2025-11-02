@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "es2017",
+    "module": "es2020",
+    "moduleResolution": "node",
+    "lib": ["dom", "es2017"],
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "rootDir": "./",
+    "outDir": "../static",
+    "types": []
+  },
+  "include": ["**/*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules"]
+}

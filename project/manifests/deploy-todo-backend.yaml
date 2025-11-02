@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: project
+  name: project-todo-backend
   namespace: dwk-mooc
   labels:
-    app: project
+    app: project-todo-backend
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: project
+      app: project-todo-backend
   template:
     metadata:
       labels:
-        app: project
+        app: project-todo-backend
     spec:
       containers:
-        - name: project
-          image: ghcr.io/fazstrac/dwk-project:rel-1-13
+        - name: project-todo-backend
+          image: ghcr.io/fazstrac/dwk-project-todo-backend:rel-2-2
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -29,18 +29,13 @@ spec:
           env:
             - name: PORT
               value: "8080"
-            - name: IMAGE_BACKEND_URL
-              value: "https://picsum.photos/1200"
-          volumeMounts:
-            - name: shared-volume
-              mountPath: /app/cache
           resources:
             requests:
               cpu: "100m"
               memory: "256Mi"
             limits:
               cpu: "500m"
-              memory: "512Mi"              
+              memory: "512Mi"
         - name: debug-app
           image: busybox:1.37.0-musl
           imagePullPolicy: Always
@@ -63,9 +58,7 @@ spec:
               memory: "128Mi"
             limits:
               cpu: "500m"
-              memory: "512Mi"              
+              memory: "512Mi"
       volumes:
         - name: shared-volume
-          persistentVolumeClaim:
-            claimName: project-pvc
-
+          emptyDir: {}
