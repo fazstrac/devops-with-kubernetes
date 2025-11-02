@@ -5,6 +5,12 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: './vitest.setup.ts',
-    include: ['ts/tests/**/*.test.ts']
+    include: ['ts/tests/**/*.test.ts'],
+    coverage: {
+      reporter: ['text', ['html', { subDir: 'coverage', type: 'lcov' }]],
+      exclude: ['ts/tests/**', 'ts/types/**'],
+      provider : 'v8',
+      enabled: true,
+    },
   }
 });

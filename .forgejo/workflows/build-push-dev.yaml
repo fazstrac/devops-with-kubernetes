@@ -28,6 +28,7 @@ jobs:
           COMMIT_TAG=$(echo -n dev-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9\.]\+/-/g')
           echo "safe_name=$SAFE_NAME" >> $FORGEJO_OUTPUT
           echo "commit_tag=$COMMIT_TAG" >> $FORGEJO_OUTPUT
+          mkdir -p artifacts
       # - name: Set up Go
       #   uses: actions/setup-go@v4
       #   with:
@@ -50,6 +51,7 @@ jobs:
           echo "Running JS frontend tests for ${{ matrix.app }}."
           npm run typecheck
           npm run test
+          mv coverage artifacts/js_coverage
       - name: Build frontend assets
         if: ${{ matrix.app == 'project/todo-app' }}
         run: |
@@ -70,10 +72,10 @@ jobs:
       - name: Run GO tests
         run: |
           cd ${{ matrix.app }}
-          mkdir -p artifacts
           APP=${{ steps.sanitize.outputs.safe_name }}
           COVERAGE_FILE=artifacts/coverage-${APP}.out
           go test -coverprofile ${COVERAGE_FILE} ./...
+          go tool cover -html=${COVERAGE_FILE} -o artifacts/go_coverage.html
       - name: Build GO application
         run: |
           set -e
