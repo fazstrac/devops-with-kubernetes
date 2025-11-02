@@ -2,6 +2,6 @@
 **/cache/
 **/node_modules/
 **/node_modules/.cache
-**/static/
+**/static/frontend.js
 **/coverage.out
 **/coverage/

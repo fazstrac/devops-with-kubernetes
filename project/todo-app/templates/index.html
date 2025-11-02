@@ -2,13 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{.title}}</title>
-  <style>
-    .todo-input { width: 400px; padding: .5rem; }
-    .todo-btn { padding: .5rem 1rem; }
-    .counter { font-size: 0.9rem; color: #666; margin-left: .5rem; }
-    .todos { margin-top: 1rem; list-style: disc; padding-left: 1.5rem; }
-  </style>
+  <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
   <h1>{{.title}}</h1>
@@ -21,14 +17,20 @@
       <span id="char-counter" class="counter">0 / 140</span>
     </form>
 
-    <table id="todo-list" class="todos" aria-live="polite">
-      <tr>
-        <th>Todo Item</th>
-        <th>Created on</th>
-        <th>Actions</th>
-      </tr>
-      <!-- Todo items will be appended here -->
-    </table>
+    <div class="todo-list-wrap" aria-live="polite">
+      <table id="todo-list" class="todos">
+        <thead>
+          <tr>
+            <th>Todo Item</th>
+            <th>Created on</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Todo items will be appended here -->
+        </tbody>
+      </table>
+    </div>
 
   <p>Devops with Kubernetes 2025</p>
   <p><code> Commit ID {{.body}}</code></p>

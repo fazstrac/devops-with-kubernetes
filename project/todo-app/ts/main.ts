@@ -38,15 +38,19 @@ export function initTodoApp(root: Document = document): void {
       const todos = await api.fetchTodos();
       todos.forEach(todo => {
         const row = document.createElement('tr');
-        row.innerHTML = `
-          <td>${todo.description}</td>
-          <td>${new Date(todo.created_at).toLocaleString()}</td>
-          <td>
-            <button data-action="edit" data-uuid="${todo.uuid}">Edit</button>
-            <button data-action="delete" data-uuid="${todo.uuid}">Delete</button>
-          </td>
-        `;
-        listEl.appendChild(row);
+          row.innerHTML = `
+            <td>${todo.description}</td>
+            <td>${new Date(todo.created_at).toLocaleString()}</td>
+            <td>
+              <button class="icon-btn" aria-label="Edit todo" data-action="edit" data-uuid="${todo.uuid}">
+                ✏️ <span class="sr-only">Edit</span>
+              </button>
+              <button class="icon-btn" aria-label="Delete todo" data-action="delete" data-uuid="${todo.uuid}">
+                🗑️ <span class="sr-only">Delete</span>
+              </button>
+            </td>
+          `;
+          listEl.appendChild(row);
       });
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -90,8 +94,12 @@ export function initTodoApp(root: Document = document): void {
           <td>${todo.description}</td>
           <td>${new Date(todo.created_at).toLocaleString()}</td>
           <td>
-            <button data-action="edit" data-uuid="${todo.uuid}">Edit</button>
-            <button data-action="delete" data-uuid="${todo.uuid}">Delete</button>
+            <button class="icon-btn" aria-label="Edit todo" data-action="edit" data-uuid="${todo.uuid}">
+              ✏️ <span class="sr-only">Edit</span>
+            </button>
+            <button class="icon-btn" aria-label="Delete todo" data-action="delete" data-uuid="${todo.uuid}">
+              🗑️ <span class="sr-only">Delete</span>
+            </button>
           </td>
         `;
         listEl.appendChild(row);
