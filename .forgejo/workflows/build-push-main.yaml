@@ -25,7 +25,7 @@ jobs:
         id: sanitize
         run: |
           SAFE_NAME=$(echo -n dwk-${{ matrix.app }} | sed 's/[^A-Za-z0-9]\+/-/g')
-          COMMIT_TAG=$(echo -n rel-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9\.]\+/-/g')
+          COMMIT_TAG=$(echo -n rel-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9]\+/-/g')
           echo "safe_name=$SAFE_NAME" >> $FORGEJO_OUTPUT
           echo "commit_tag=$COMMIT_TAG" >> $FORGEJO_OUTPUT
       - name: Install Node.js dependencies

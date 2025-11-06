@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: pong-app
-  namespace: dwk-mooc
+  namespace: exercises
   labels:
     app: pong-app
 spec:
@@ -17,7 +17,8 @@ spec:
     spec:
       containers:
         - name: pong-app
-          image: ghcr.io/fazstrac/dwk-pong-app:rel-2-1
+          image: forge.fudwin.xyz:8443/sami/dwk-pong-app:dev-exercise-2.3
+          # image: ghcr.io/fazstrac/dwk-pong-app:rel-2-1
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
