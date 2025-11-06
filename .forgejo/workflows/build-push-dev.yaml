@@ -26,7 +26,7 @@ jobs:
         run: |
           set -e
           SAFE_NAME=$(echo -n dwk-${{ matrix.app }} | sed 's/[^A-Za-z0-9]\+/-/g')
-          COMMIT_TAG=$(echo -n dev-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9]\+/-/g')
+          COMMIT_TAG=$(echo -n dev-${{ env.FORGEJO_REF_NAME }} | sed 's/[^A-Za-z0-9\.]\+/-/g')
           echo "safe_name=$SAFE_NAME" >> $FORGEJO_OUTPUT
           echo "commit_tag=$COMMIT_TAG" >> $FORGEJO_OUTPUT
           mkdir -p ${{ matrix.app }}/artifacts && echo "Created artifacts directory for ${{ matrix.app }}."
