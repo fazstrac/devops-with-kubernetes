@@ -17,9 +17,8 @@ spec:
     spec:
       containers:
         - name: project-todo-app
-          image: forge.fudwin.xyz:8443/sami/dwk-project-todo-app:dev-exercise-2.4
           # For production use the release image:
-          # image: ghcr.io/fazstrac/dwk-project-todo-app:rel-2.4
+          image: ghcr.io/fazstrac/dwk-project-todo-app:rel-2.4
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
