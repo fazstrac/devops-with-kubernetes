@@ -1,4 +1,4 @@
-# Devops with Kubernetes - Project app Exercise 2.2
+# Devops with Kubernetes - Project app Exercise 2.4
 
 ## Purpose
 
@@ -8,18 +8,15 @@ Todo-backend is a microservice that exposes endpoint `/todos` with HTTP verbs GE
 
 ## Learning goals of the exercise as I understood them
 
-* Intercontainer networking - in this case routing endpoints to different backends
-* Using Javascript to bring dynamic updates to the app
-* Add a bit more of HTML into the project from ex. 1.12
+* Kubernetes namespaces
 
 ## Extra learning goals I created for myself
 
-* Learn Typescript, testing it and compiling into Javascript
+* None for this exercise, namespaces were already familiar to me
 
 ## Notes
 
-Fun exercise and quite straightforward. Learned a lot about Typescript and esp. testing it. It's quite rich ecosystem I see.
-
+Super simple exercise. Could have been done already earlier. I had been using namespaces from get-go to avoid cluttering my homelab
 
 ## Files
 

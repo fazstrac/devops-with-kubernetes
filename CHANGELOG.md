@@ -1,5 +1,14 @@
 # Changelog (recent changes)
 
+## 2025-11-06 — exercise/2.4 — log-output & pong: Move to different namespace
+
+Summary:
+- Move project to namespace `project`
+
+Essential files changed:
+- `project/manifests/*` - namespace change
+- `project/todo-app/app.go` - HTML generation change for maintainability
+
 ## 2025-11-06 — exercise/2.3 — log-output & pong: Move to different namespace
 
 Summary:
