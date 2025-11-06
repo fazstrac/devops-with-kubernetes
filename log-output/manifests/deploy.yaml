@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: log-output
-  namespace: dwk-mooc
+  namespace: exercises
   labels:
     app: log-output
 spec:
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: log-output-app1
-          image: ghcr.io/fazstrac/dwk-log-output-app1:rel-2-1
+          image: ghcr.io/fazstrac/dwk-log-output-app1:rel-2.3
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -37,7 +37,7 @@ spec:
               cpu: "500m"
               memory: "512Mi"
         - name: log-output-app2
-          image: ghcr.io/fazstrac/dwk-log-output-app2:rel-2-1
+          image: ghcr.io/fazstrac/dwk-log-output-app2:rel-2.3
           imagePullPolicy: Always
           env:
             - name: PONGAPP_SVC_URL
