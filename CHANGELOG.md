@@ -1,5 +1,14 @@
 # Changelog (recent changes)
 
+## 2025-11-06 — exercise/2.3 — log-output & pong: Move to different namespace
+
+Summary:
+- Move log-output and pong app to namespace `exercises`
+
+Essential files changed:
+- `log-output/manifests/deploy.yaml`, `log-output/manifests/ingress.yaml`, and `log-output/manifests/service.yaml`
+- `pong-app/manifests/deploy.yaml`, `pong-app/manifests/service.yaml`  
+
 ## 2025-11-02 — exercise/2p2 — project: UI polish, TS/tests, CI stabilisation and backend API
 
 Summary:

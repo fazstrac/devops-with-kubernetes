@@ -11,7 +11,11 @@ Learning goals & constraints
 
 High-level architecture
 - There are three main apps in top-level directories: `project`, `pong-app`, and `log-output`.
-  - `project` is the course project (exercise 1.13). It is a Gin-based web server that serves an HTML index and a cached backend image. Key files: `project/app.go`, `project/main.go`, `project/templates/index.html`, `project/static/frontend.js`.
+ - There are three main apps in top-level directories: `project`, `pong-app`, and `log-output`.
+  - The original `project` app has been refactored into two cooperating pieces used in the exercises:
+    - `project/todo-backend` — a small Go backend that exposes the Todo API (GET /todos, POST /todos, etc.). It's intentionally simple and follows the same Gin patterns as the other services. Key files (example): `project/todo-backend/main.go`.
+    - `project/todo-app` — a TypeScript frontend that talks to the Todo backend. Source lives in `project/todo-app/ts` and the bundled artifact is `project/todo-app/static/frontend.js`. Key files: `project/todo-app/ts/main.ts`, `project/todo-app/ts/todo-api.ts`, `project/todo-app/ts/tests/*`.
+    - The refactor keeps the original learning goals but separates frontend/JS concerns (TypeScript, bundling, browser testing) from the Go backend examples.
   - `pong-app` provides a simple `/pingpong` endpoint that returns `pong <n>` and persists a counter to a file. Key file: `pong-app/main.go`.
   - `log-output` contains two small apps that share a PVC to persist logs and counter files: `log-output/app1` (writes timestamp+UUID every 5s) and `log-output/app2` (reads the log and counter and exposes `/log`). Key files: `log-output/app1/main.go`, `log-output/app2/main.go`.
 
@@ -63,6 +67,25 @@ Build, run and test workflows (project-specific)
     ```
 
   - Tests produce verbose logs (Gin debug lines and custom logger output). This is expected; do not treat those as failures.
+  - Frontend (todo-app) build & tests
+    - The new `project/todo-app` contains a TypeScript frontend under `project/todo-app/ts` and a small test suite using Vitest + Testing Library.
+    - Build: the frontend is bundled with `esbuild` to `project/todo-app/static/frontend.js`. Use the npm script from that folder:
+      ```bash
+      cd project/todo-app
+      npm run build
+      ```
+    - Type check: run `npm run typecheck` in `project/todo-app` to run `tsc` against the `ts/tsconfig.json`.
+    - Tests: the project uses Vitest with `jsdom` for DOM tests. From `project/todo-app`:
+      ```bash
+      npm ci       # install dev deps (first time only)
+      npm test     # run vitest (headless)
+      npm run test:ui  # run vitest interactive UI during development
+      ```
+    - Files of interest:
+      - `project/todo-app/ts/main.ts` — frontend wiring, exported `initTodoApp(root?)` to support testable initialization.
+      - `project/todo-app/ts/todo-api.ts` — small fetch-based API helpers used by the UI.
+      - `project/todo-app/ts/tests/*` — unit and DOM tests that exercise the API layer and UI wiring.
+    - Notes: Vitest runs in an ESM-friendly mode; the repo's `ts/tsconfig.json` includes Vitest globals so tests are typed.
 - Kubernetes manifests live under `manifests/` and per-app `manifests/` directories. PVC used for log/pong is `manifests/log-pong-pvc.yaml` (ReadWriteMany) — useful when running the two `log-output` containers and `pong-app` together.
 
 Project conventions & common edits
