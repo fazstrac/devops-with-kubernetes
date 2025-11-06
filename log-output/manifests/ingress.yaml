@@ -2,7 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: log-output-ingress
-  namespace: dwk-mooc
+  namespace: exercises
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
