@@ -2,7 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: project-ingress
-  namespace: dwk-mooc
+  namespace: project
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
