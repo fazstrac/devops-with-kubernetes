@@ -26,9 +26,9 @@ type TempFile interface {
 var logger *log.Logger
 
 var (
-	COMMIT_SHA string
-	COMMIT_TAG string
-	// Create function variables for easier testing/mocking
+	COMMIT_SHA             string
+	COMMIT_TAG             string
+	TITLE                  = "DevOps with Kubernetes - Chapter 3 - Exercise 2.4"
 	StatFunc               = os.Stat
 	ReadFileFunc           = os.ReadFile
 	CreateTempFunc         = func(dir, pattern string) (TempFile, error) { return os.CreateTemp(dir, pattern) }
@@ -112,7 +112,7 @@ func (app *App) LoadCachedImage() (imageAvailable bool, err error) {
 
 func (app *App) GetIndex(c *gin.Context) {
 	c.HTML(http.StatusOK, "index.html", gin.H{
-		"title": "DevOps with Kubernetes - Chapter 3 - Exercise 2.2",
+		"title": TITLE,
 		"body":  COMMIT_SHA + " (" + COMMIT_TAG + ")",
 	})
 }
