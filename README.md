@@ -17,7 +17,7 @@
 - [1.13](https://github.com/fazstrac/devops-with-kubernetes/tree/1.13/project)
 - [2.1](https://github.com/fazstrac/devops-with-kubernetes/tree/2.1/log-output)
 - [2.2](https://github.com/fazstrac/devops-with-kubernetes/tree/2.2/project)
-- [2.3](https://github.com/fazstrac/devops-with-kubernetes/tree/2.2/log-output)
+- [2.3](https://github.com/fazstrac/devops-with-kubernetes/tree/2.3/log-output)
 
 ## Directory structure (concise)
 
