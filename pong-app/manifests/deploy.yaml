@@ -17,8 +17,7 @@ spec:
     spec:
       containers:
         - name: pong-app
-          image: forge.fudwin.xyz:8443/sami/dwk-pong-app:dev-exercise-2.3
-          # image: ghcr.io/fazstrac/dwk-pong-app:rel-2-1
+          image: ghcr.io/fazstrac/dwk-pong-app:rel-2.3
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false

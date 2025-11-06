@@ -1,10 +1,8 @@
-# Devops with Kubernetes - Log output app Exercise 2.1
+# Devops with Kubernetes - Log output app Exercise 2.3
 
 ## Purpose
 
-At the moment its purpose is to respond with a log of saved current date and a random UUID on `/log` endpoint + a count of hits on the `/pingpong` endpoint. UUID will be reset on restart, but logs and the number of pingpongs are persisted to files using emptyDir volumes. The biggest change from the previous exercise is that the previously-used PersistentVolum was removed and replaced with per-pod emptyDir volumes, and the communication between `log-output` and `pong` apps are done via HTTP endpoints.
-
-This exercise required also changes to the [Pong app](../pong-app).
+At the moment the applications' purpose is to respond with a log of saved current date and a random UUID on `/log` endpoint + a count of hits on the `/pingpong` endpoint. UUID will be reset on restart, but logs and the number of pingpongs are persisted to files using emptyDir volumes. In this exercise this and Pong app were moved to namespace `exercises`
 
 NB.
 - EmptyDir volumes are removed if the pod is removed from the node (assuming also if they are evicted to another node)
@@ -12,13 +10,11 @@ NB.
 
 ## Learning goals of the exercise as I understood them
 
-* Inter-pod communication over networking, Kubernetes DNS
+* Kubernetes namespaces
 
 ## Notes
 
-Not much in the way of notes. The assignment was a bit unclear in how the persistence from previous assignment should be handled without PersistentVolume, but that's ok. I chose to use emptyDirs instead.
-
-I also deleted the [Pong-app `ingress.yaml`](../pong-app/manifests) as it was only a copy of the [`ingress.yaml`](manifests/ingress.yaml).
+Pleasantly simple exercise, I was already using namespaces so this meant only changing the namespace.
 
 ## Files
 
