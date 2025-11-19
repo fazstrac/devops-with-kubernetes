@@ -19,19 +19,10 @@ var (
 )
 
 func main() {
-	arglen := len(os.Args[1:])
-
-	if arglen == 0 {
-		fmt.Printf("Usage: %s <filename>\n", os.Args[0])
-		os.Exit(1)
-	} else if arglen > 1 {
-		fmt.Printf("Please give only one filename. Usage: %s <filename>\n", os.Args[0])
-		os.Exit(1)
-	}
-
+	counterFilePath := "/data/counter.txt"
 	fmt.Printf("Starting pong-app (SHA %s).\n", COMMIT_SHA)
 
-	counter = initCounter(os.Args[1])
+	counter = initCounter(counterFilePath)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -39,7 +30,7 @@ func main() {
 		os.Setenv("PORT", port)
 	}
 
-	router := setupRouter(os.Args[1])
+	router := setupRouter(counterFilePath)
 	router.Run("0.0.0.0:" + port)
 }
 

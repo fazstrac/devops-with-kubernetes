@@ -17,17 +17,10 @@ var (
 func main() {
 	myuuid := uuid.New().String()
 
-	arglen := len(os.Args[1:])
-
-	if arglen == 0 {
-		fmt.Printf("Usage: %s <filename>\n", os.Args[0])
-		os.Exit(1)
-	} else if arglen > 1 {
-		fmt.Printf("Please give only one filename. Usage: %s <filename>\n", os.Args[0])
-		os.Exit(1)
+	fname := "/data/" + os.Getenv("COMMON_LOGFILE_NAME")
+	if fname == "/data/" {
+		panic("COMMON_LOGFILE_NAME environment variable not set")
 	}
-
-	fname := os.Args[1]
 
 	fmt.Printf("Starting app1 (SHA %s) with UUID: %s\n", COMMIT_SHA, myuuid)
 

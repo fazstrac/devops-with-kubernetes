@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: log-output-configmap
+  namespace: exercises
+data:
+  common_logfile_name: "log.txt"
+  message_file: |
+    Hello from DevOps with Kubernetes Course!
+    This is a sample file stored in a ConfigMap.
+  message_env: "hello from configmap environment"
+  pongapp_svc_url: "http://pong-app-svc:4000/pongs"

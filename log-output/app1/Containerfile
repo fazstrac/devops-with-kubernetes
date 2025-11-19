@@ -9,7 +9,7 @@ ARG COMMIT_SHA
 ARG COMMIT_TAG
 ARG DEBUG=false
 
-WORKDIR /log_app
+WORKDIR /build
 
 # Copy go mod and sum files
 COPY go.mod go.sum ./
@@ -26,13 +26,13 @@ RUN CGO_ENABLED=0 GOOS=linux sh -c '\
   fi; \
   go build -trimpath -ldflags "$LDFLAGS" -o server main.go'
 
-# Final stage: distroless
+# Final stage: scratch
 FROM scratch
 USER 1000:1000
 WORKDIR /data
 WORKDIR /app
 
-COPY --from=builder /log_app/server .
+COPY --from=builder /build/server .
 
 # Run the binary
-ENTRYPOINT ["/app/server", "/data/log.txt"]
+ENTRYPOINT ["/app/server"]

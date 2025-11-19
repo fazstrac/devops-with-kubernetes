@@ -26,6 +26,12 @@ spec:
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
+          env:
+            - name: COMMON_LOGFILE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: log-output-configmap
+                  key: common_logfile_name
           volumeMounts:
             - name: shared-volume
               mountPath: /data
@@ -41,7 +47,20 @@ spec:
           imagePullPolicy: Always
           env:
             - name: PONGAPP_SVC_URL
-              value: "http://pong-app-svc:4000/pongs"
+              valueFrom:
+                configMapKeyRef:
+                  name: log-output-configmap
+                  key: pongapp_svc_url
+            - name: MESSAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: log-output-configmap
+                  key: message
+            - name: COMMON_LOGFILE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: log-output-configmap
+                  key: common_logfile_name
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -52,6 +71,9 @@ spec:
           volumeMounts:
             - name: shared-volume
               mountPath: /data
+            - name: log-output-configmap-volume
+              mountPath: /etc/config
+              readOnly: true
           resources:
             requests:
               cpu: "100m"
@@ -62,3 +84,9 @@ spec:
       volumes:
         - name: shared-volume
           emptyDir: {}
+        - name: log-output-configmap-volume
+          configMap:
+            name: log-output-configmap
+            items:
+              - key: message_file
+                path: message.txt
