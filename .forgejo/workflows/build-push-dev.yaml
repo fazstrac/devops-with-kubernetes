@@ -30,6 +30,10 @@ jobs:
           echo "safe_name=$SAFE_NAME" >> $FORGEJO_OUTPUT
           echo "commit_tag=$COMMIT_TAG" >> $FORGEJO_OUTPUT
           mkdir -p ${{ matrix.app }}/artifacts && echo "Created artifacts directory for ${{ matrix.app }}."
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.25.4'
       - name: Install Node.js dependencies
         if: ${{ matrix.app == 'project/todo-app' }}
         run: |
